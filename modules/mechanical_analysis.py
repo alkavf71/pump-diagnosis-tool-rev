@@ -30,7 +30,7 @@ def analyze_mechanical_conditions(
     
     recommendations = []
     
-    # === PERBAIKAN KRUSIAL: Hanya diagnosa fault jika vibrasi signifikan (> 2.8 mm/s) ===
+    # === FIX KRUSIAL: Hanya diagnosa fault jika vibrasi signifikan (> 2.8 mm/s) ===
     if overall_zone in ["C", "D"]:
         if driver_report["overall_zone"] in ["C", "D"]:
             recommendations.append(f"⚠️ Motor vibration Zone {driver_report['overall_zone']} - check coupling alignment & rotor balance")
@@ -38,7 +38,7 @@ def analyze_mechanical_conditions(
         if driven_report["overall_zone"] in ["C", "D"]:
             recommendations.append(f"⚠️ Pump vibration Zone {driven_report['overall_zone']} - check impeller balance & bearing condition")
         
-        # Identifikasi fault spesifik hanya jika vibrasi > 2.8 mm/s (Zone B ke atas)
+        # Identifikasi fault spesifik hanya jika vibrasi > 2.8 mm/s
         primary_fault = primary_component_report["faults"]["primary_fault"]
         if driver_max > 2.8:
             if "Unbalance" in primary_fault:
@@ -58,7 +58,7 @@ def analyze_mechanical_conditions(
         "primary_component": primary_component,
         "overall_zone": overall_zone,
         "overall_severity": primary_component_report["severity"],
-        "primary_fault": primary_fault,  # ← DIPERBAIKI: "None" untuk vibrasi normal
+        "primary_fault": primary_fault,  # ← FIX: "None" untuk vibrasi normal
         "recommendations": recommendations,
         "has_issue": overall_zone in ["C", "D"]
     }
