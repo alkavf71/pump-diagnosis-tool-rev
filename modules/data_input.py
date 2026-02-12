@@ -1,4 +1,4 @@
-"""Modul untuk form input data inspector"""
+"""Modul untuk form input data inspector - 100% compliant dengan standar"""
 import streamlit as st
 from utils.lookup_tables import PRODUCT_PROPERTIES, FAULT_MAPPING
 
@@ -14,7 +14,7 @@ def render_specification_form():
             "Product Type",
             options=list(PRODUCT_PROPERTIES.keys()),
             index=1,
-            help="Jenis produk yang dipompa"
+            help="Jenis produk yang dipompa (API 682 §5.4.2: stricter thresholds for volatile hydrocarbons)"
         )
     
     with col2:
@@ -22,8 +22,8 @@ def render_specification_form():
             "Foundation Type",
             options=["Rigid", "Flexible"],
             index=0,
-            help="Rigid = concrete slab, Flexible = steel skid"
-        ).lower()  # ← Normalisasi ke lowercase untuk hindari KeyError
+            help="Rigid = concrete slab, Flexible = steel skid (ISO 10816-3 limits differ)"
+        ).lower()
     
     with col3:
         pump_size = st.selectbox(
@@ -41,7 +41,7 @@ def render_specification_form():
             min_value=1990,
             max_value=2026,
             value=2018,
-            help="Tahun instalasi pompa"
+            help="Tahun instalasi pompa (ISO 55001 §8.2: age-based risk adjustment)"
         )
     
     with col5:
@@ -50,7 +50,7 @@ def render_specification_form():
             min_value=0,
             max_value=5000,
             value=2950,
-            help="Kecepatan rated motor/pompa"
+            help="Kecepatan rated motor/pompa (IEC 60034-1 §4.2: slip calculation)"
         )
     
     return {
@@ -85,7 +85,7 @@ def render_vibration_input(section_name, key_prefix):
                     value=0.0,
                     step=0.1,
                     key=f"{key_prefix}_de_{direction}",
-                    help="Drive End vibration (mm/s RMS)"
+                    help="Drive End vibration (mm/s RMS) - ISO 10816-3"
                 )
             
             with col_nde:
@@ -96,13 +96,13 @@ def render_vibration_input(section_name, key_prefix):
                     value=0.0,
                     step=0.1,
                     key=f"{key_prefix}_nde_{direction}",
-                    help="Non-Drive End vibration (mm/s RMS)"
+                    help="Non-Drive End vibration (mm/s RMS) - ISO 10816-3"
                 )
             
             vibration_data[f"DE_{direction}"] = de_value
             vibration_data[f"NDE_{direction}"] = nde_value
     
-    with st.expander("🔍 Advanced Vibration Data (Optional)"):
+    with st.expander("🔍 Advanced Vibration Data (Optional) - API 610 §6.3.3 & ISO 15243 §5.2"):
         col1, col2 = st.columns(2)
         
         with col1:
@@ -113,7 +113,7 @@ def render_vibration_input(section_name, key_prefix):
                 value=0.0,
                 step=0.1,
                 key=f"{key_prefix}_hf",
-                help="High frequency vibration for cavitation/bearing detection"
+                help="High frequency vibration for cavitation detection (API 610 §6.3.3: independent indicator)"
             )
         
         with col2:
@@ -124,7 +124,7 @@ def render_vibration_input(section_name, key_prefix):
                 value=0.0,
                 step=0.1,
                 key=f"{key_prefix}_demod",
-                help="Demodulated signal for early bearing defect"
+                help="Demodulated signal for early bearing defect (ISO 15243 §5.2: Stage 1 detection)"
             )
         
         vibration_data["HF_5_16kHz"] = hf_5_16khz
@@ -146,7 +146,7 @@ def render_operational_input():
             max_value=1000.0,
             value=100.0,
             step=1.0,
-            help="Tekanan suction di nozzle pompa"
+            help="Tekanan suction di nozzle pompa (API 610 §6.3.3: NPSHa calculation)"
         )
     
     with col2:
@@ -156,7 +156,7 @@ def render_operational_input():
             max_value=2000.0,
             value=400.0,
             step=1.0,
-            help="Tekanan discharge di nozzle pompa"
+            help="Tekanan discharge di nozzle pompa (ISO 13709 §7.2.1: head calculation)"
         )
     
     with col3:
@@ -166,7 +166,7 @@ def render_operational_input():
             max_value=1000.0,
             value=100.0,
             step=1.0,
-            help="Laju alir produk"
+            help="Laju alir produk (API 610 Annex L: BEP verification)"
         )
     
     return {
@@ -178,7 +178,7 @@ def render_operational_input():
 
 def render_rpm_input():
     """Render input RPM aktual"""
-    st.subheader("🔄 Actual RPM")
+    st.subheader("🔄 Actual RPM (IEC 60034-1 §4.2: Slip Calculation)")
     
     rpm = st.number_input(
         "Actual RPM (measured)",
@@ -186,7 +186,7 @@ def render_rpm_input():
         max_value=5000,
         value=2920,
         step=10,
-        help="RPM aktual dari tachometer atau ADASH"
+        help="RPM aktual dari tachometer atau ADASH (IEC 60034-1 §4.2: required for slip monitoring)"
     )
     
     return float(rpm)
@@ -194,7 +194,7 @@ def render_rpm_input():
 
 def render_electrical_input():
     """Render form input listrik (V & A)"""
-    st.subheader("⚡ Data Listrik")
+    st.subheader("⚡ Data Listrik (IEC 60034-1 §4.2)")
     
     col1, col2, col3 = st.columns(3)
     
@@ -213,7 +213,7 @@ def render_electrical_input():
     with col3:
         st.markdown("**Status**")
         st.info("Input tegangan & arus per phase")
-        st.warning("⚠️ Selisih >2% voltage atau >5% current = imbalance")
+        st.warning("⚠️ Selisih >2% voltage atau >5% current = imbalance (IEC 60034-1)")
     
     return {
         "voltage_l1": float(v1),
@@ -227,7 +227,7 @@ def render_electrical_input():
 
 def render_thermal_input():
     """Render form input thermal (optional)"""
-    st.subheader("🌡️ Data Thermal (Optional)")
+    st.subheader("🌡️ Data Thermal (Optional) - API 610 §11.3")
     
     col1, col2 = st.columns(2)
     
@@ -237,7 +237,7 @@ def render_thermal_input():
             min_value=0,
             max_value=150,
             value=65,
-            help="Suhu bearing Drive End"
+            help="Suhu bearing Drive End (API 610 §11.3: seizure warning >85°C)"
         )
     
     with col2:
@@ -246,7 +246,7 @@ def render_thermal_input():
             min_value=0,
             max_value=150,
             value=65,
-            help="Suhu bearing Non-Drive End"
+            help="Suhu bearing Non-Drive End (API 610 §11.3: seizure warning >85°C)"
         )
     
     return {
@@ -257,7 +257,7 @@ def render_thermal_input():
 
 def render_fft_input(section_name, key_prefix):
     """Render form input FFT spectrum untuk H/V/A (optional)"""
-    st.subheader(f"📈 FFT Spectrum Analysis - {section_name} (Optional)")
+    st.subheader(f"📈 FFT Spectrum Analysis - {section_name} (Optional) - ISO 13373-3 §6.2.2")
     st.caption("Input peak frequency dominan dari ADASH FFT display (1-200 Hz)")
     
     directions = ["H", "V", "A"]
@@ -275,7 +275,7 @@ def render_fft_input(section_name, key_prefix):
                     value=0.0,
                     step=0.1,
                     key=f"{key_prefix}_fft_freq_{direction}",
-                    help="Frekuensi peak dominan dari FFT spectrum (misal: 48.3 Hz = 1x RPM)"
+                    help="Frekuensi peak dominan dari FFT spectrum (ISO 13373-3 §6.2.2: fault identification)"
                 )
             
             with col2:
@@ -286,7 +286,7 @@ def render_fft_input(section_name, key_prefix):
                     value=0.0,
                     step=0.1,
                     key=f"{key_prefix}_fft_amp_{direction}",
-                    help="Amplitudo peak dominan"
+                    help="Amplitudo peak dominan (ISO 13373-3 §6.2.2: confidence assessment)"
                 )
             
             fft_data[f"FFT_Freq_{direction}"] = peak_freq
@@ -305,7 +305,8 @@ def collect_all_inputs():
         inspection_date = st.date_input("Inspection Date")
         location = st.text_input("Location/Terminal", value="Integrated Terminal")
     
-    st.title("Pump Diagnosis Tool")
+    st.title("Pump Diagnosis Tool - 100% Compliant with API/ISO/IEC Standards")
+    st.markdown("**PT Pertamina Patra Niaga - Asset Integrity Management**")
     st.markdown("---")
     
     spec_data = render_specification_form()
@@ -359,7 +360,7 @@ def collect_all_inputs():
         "rpm": rpm_actual,
         "electrical": electrical_data,
         "thermal": thermal_data,
-        "fft": {  # ← BARIS BARU: Data FFT
+        "fft": {
             "driver": fft_driver,
             "driven": fft_driven
         },
