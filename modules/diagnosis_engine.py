@@ -462,7 +462,11 @@ def run_complete_diagnosis(input_data):
     rpm_actual = input_data.get("rpm", 2950)
     
     hydraulic_report = generate_hydraulic_report(operational_data, spec_data)
-    electrical_report = generate_electrical_report(electrical_data, spec_data)
+    electrical_report = generate_electrical_report(
+    electrical_data, 
+    spec_data,
+    actual_rpm=input_data.get("rpm", None)  # ← TAMBAHKAN INI
+)
     thermal_report = generate_thermal_report(thermal_data)
     
     mechanical_report = analyze_mechanical_conditions(
