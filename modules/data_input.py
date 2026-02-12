@@ -19,11 +19,11 @@ def render_specification_form():
     
     with col2:
         foundation_type = st.radio(
-        "Foundation Type",
-        options=["Rigid", "Flexible"],
-        index=0,
-        help="Rigid = concrete slab, Flexible = steel skid"
-        ).lower()  # ← TAMBAHKAN .lower() DI SINI
+            "Foundation Type",
+            options=["Rigid", "Flexible"],
+            index=0,
+            help="Rigid = concrete slab, Flexible = steel skid"
+        ).lower()  # ← Normalisasi ke lowercase untuk hindari KeyError
     
     with col3:
         pump_size = st.selectbox(
@@ -254,6 +254,7 @@ def render_thermal_input():
         "temp_nde": float(temp_nde)
     }
 
+
 def render_fft_input(section_name, key_prefix):
     """Render form input FFT spectrum untuk H/V/A (optional)"""
     st.subheader(f"📈 FFT Spectrum Analysis - {section_name} (Optional)")
@@ -326,15 +327,15 @@ def collect_all_inputs():
     st.markdown("---")
     
     thermal_data = render_thermal_input()
+    st.markdown("---")
     
-    st.markdown("---")
-    col_submit, col_clear = st.columns(2)
-
-        # Section 8: FFT Spectrum (optional)
-    st.markdown("---")
+    # Section FFT Spectrum (optional)
     fft_driver = render_fft_input("Driver (Motor)", "driver_fft")
     st.markdown("---")
     fft_driven = render_fft_input("Driven (Pump)", "driven_fft")
+    
+    st.markdown("---")
+    col_submit, col_clear = st.columns(2)
     
     with col_submit:
         submit_button = st.button("🔍 Run Diagnosis", type="primary", use_container_width=True)
@@ -358,7 +359,7 @@ def collect_all_inputs():
         "rpm": rpm_actual,
         "electrical": electrical_data,
         "thermal": thermal_data,
-        "fft": {                  
+        "fft": {  # ← BARIS BARU: Data FFT
             "driver": fft_driver,
             "driven": fft_driven
         },
