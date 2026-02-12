@@ -19,11 +19,11 @@ def render_specification_form():
     
     with col2:
         foundation_type = st.radio(
-            "Foundation Type",
-            options=["Rigid", "Flexible"],
-            index=0,
-            help="Rigid = concrete slab, Flexible = steel skid"
-        )
+        "Foundation Type",
+        options=["Rigid", "Flexible"],
+        index=0,
+        help="Rigid = concrete slab, Flexible = steel skid"
+        ).lower()  # ← TAMBAHKAN .lower() DI SINI
     
     with col3:
         pump_size = st.selectbox(
