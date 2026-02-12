@@ -142,7 +142,6 @@ def main():
         - API 610 12th Ed. (Centrifugal Pumps)
         - ISO 13373-3:2020 (Condition Monitoring)
         - IEC 60034-1 (Rotating Electrical Machines)
-        - Pertamina SOP Asset Integrity
         """)
 
 if __name__ == "__main__":
