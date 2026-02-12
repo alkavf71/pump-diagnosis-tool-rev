@@ -36,8 +36,10 @@ def display_detailed_analysis(diagnosis_result):
     
     st.markdown("### 🔍 Detailed Analysis")
     
-    tabs = st.tabs(["Hydraulic", "Electrical", "Mechanical", "Thermal"])
+    # Tambahkan tab FFT ke daftar tabs
+    tabs = st.tabs(["Hydraulic", "Electrical", "Mechanical", "Thermal", "FFT Spectrum"])
     
+    # Tab 1: Hydraulic
     with tabs[0]:
         hydraulic = analyses["hydraulic"]
         
@@ -70,6 +72,7 @@ def display_detailed_analysis(diagnosis_result):
             if hydraulic['flow_status'] != "NORMAL":
                 st.info(hydraulic['flow_recommendation'])
     
+    # Tab 2: Electrical
     with tabs[1]:
         electrical = analyses["electrical"]
         
@@ -104,6 +107,7 @@ def display_detailed_analysis(diagnosis_result):
             for rec in electrical['recommendations']:
                 st.info(rec)
     
+    # Tab 3: Mechanical
     with tabs[2]:
         mechanical = analyses["mechanical"]
         
@@ -137,6 +141,7 @@ def display_detailed_analysis(diagnosis_result):
             for rec in mechanical['recommendations']:
                 st.info(rec)
     
+    # Tab 4: Thermal
     with tabs[3]:
         thermal = analyses["thermal"]
         
@@ -169,94 +174,112 @@ def display_detailed_analysis(diagnosis_result):
             st.warning("⚠️ **Thermal Issue Detected**")
             for rec in thermal['recommendations']:
                 st.info(rec)
-
-def display_detailed_analysis(diagnosis_result):
-    """Display detailed analysis per component"""
-    analyses = diagnosis_result["analyses"]
     
-    st.markdown("### 🔍 Detailed Analysis")
-    
-    # Tambahkan tab FFT
-    tabs = st.tabs(["Hydraulic", "Electrical", "Mechanical", "Thermal", "FFT Spectrum"])
-    
-    # ... existing tabs 0-3 ...
-    
-    # Tab 5: FFT Spectrum
+    # Tab 5: FFT Spectrum (BARU)
     with tabs[4]:
         fft_analysis = analyses.get("fft", {})
         
         if not fft_analysis.get("available", False):
             st.info("ℹ️ FFT spectrum data not available or not entered")
+            st.caption("To enable FFT analysis, input peak frequency data in the FFT Spectrum section of the form.")
             return
         
         st.markdown(f"**RPM Actual:** {fft_analysis['rpm_actual']} RPM ({fft_analysis['rpm_hz']} Hz)")
         st.markdown(f"**Peak Findings:** {fft_analysis['count']} significant peaks detected")
         
         if fft_analysis["count"] > 0:
-            for idx, finding in enumerate(fft_analysis["findings"], 1):
-                with st.expander(f"🔍 Peak #{idx}: {finding['component']} - {finding['direction']}"):
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        st.metric("Frequency", f"{finding['frequency_hz']} Hz")
-                        st.metric("Ratio to RPM", f"{finding['ratio_to_rpm']}x")
-                    
-                    with col2:
-                        st.metric("Amplitude", f"{finding['amplitude_mms']} mm/s")
-                        st.metric("Confidence", finding["confidence"])
-                    
-                    with col3:
-                        st.markdown(f"**Fault:** {finding['fault']}")
+            # Group findings by confidence level
+            high_confidence = [f for f in fft_analysis["findings"] if f["confidence"] == "HIGH"]
+            medium_confidence = [f for f in fft_analysis["findings"] if f["confidence"] == "MEDIUM"]
+            low_confidence = [f for f in fft_analysis["findings"] if f["confidence"] == "LOW"]
+            
+            # Display HIGH confidence first
+            if high_confidence:
+                st.error("🔴 **HIGH CONFIDENCE FINDINGS** (Requires immediate attention)")
+                for idx, finding in enumerate(high_confidence, 1):
+                    with st.expander(f"⚠️ Peak #{idx}: {finding['component']} - {finding['direction']}"):
+                        col1, col2, col3 = st.columns(3)
                         
-                        # Warna berdasarkan confidence
-                        if finding["confidence"] == "HIGH":
+                        with col1:
+                            st.metric("Frequency", f"{finding['frequency_hz']} Hz")
+                            st.metric("Ratio to RPM", f"{finding['ratio_to_rpm']}x")
+                        
+                        with col2:
+                            st.metric("Amplitude", f"{finding['amplitude_mms']} mm/s")
+                            st.metric("Confidence", finding["confidence"])
+                        
+                        with col3:
+                            st.markdown(f"**Fault:** {finding['fault']}")
                             st.error("⚠️ HIGH CONFIDENCE - Requires attention")
-                        elif finding["confidence"] == "MEDIUM":
+            
+            # Display MEDIUM confidence
+            if medium_confidence:
+                st.warning("🟠 **MEDIUM CONFIDENCE FINDINGS** (Monitor closely)")
+                for idx, finding in enumerate(medium_confidence, len(high_confidence) + 1):
+                    with st.expander(f"⚠️ Peak #{idx}: {finding['component']} - {finding['direction']}"):
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            st.metric("Frequency", f"{finding['frequency_hz']} Hz")
+                            st.metric("Ratio to RPM", f"{finding['ratio_to_rpm']}x")
+                        
+                        with col2:
+                            st.metric("Amplitude", f"{finding['amplitude_mms']} mm/s")
+                            st.metric("Confidence", finding["confidence"])
+                        
+                        with col3:
+                            st.markdown(f"**Fault:** {finding['fault']}")
                             st.warning("⚠️ MEDIUM CONFIDENCE - Monitor closely")
+            
+            # Display LOW confidence (collapsed by default)
+            if low_confidence:
+                with st.expander(f"⚪ LOW CONFIDENCE FINDINGS ({len(low_confidence)} peaks)", expanded=False):
+                    for idx, finding in enumerate(low_confidence, len(high_confidence) + len(medium_confidence) + 1):
+                        st.markdown(f"**Peak #{idx}:** {finding['frequency_hz']} Hz ({finding['ratio_to_rpm']}x RPM) - {finding['fault']}")
         else:
             st.success("✅ No significant peaks detected in FFT spectrum")
 
 
-    def display_action_plan(action_plan):
-        """Display action plan dengan timeline"""
-        st.markdown("### 📋 Recommended Action Plan")
+def display_action_plan(action_plan):
+    """Display action plan dengan timeline"""
+    st.markdown("### 📋 Recommended Action Plan")
+    
+    actions = action_plan["actions"]
+    
+    if not actions:
+        st.success("✅ No immediate actions required. Continue routine monitoring.")
+        return
+    
+    priority_order = ["CRITICAL", "IMMEDIATE", "HIGH", "MEDIUM", "LOW", "ROUTINE"]
+    
+    for priority in priority_order:
+        priority_actions = [a for a in actions if a.get("priority") == priority]
         
-        actions = action_plan["actions"]
-        
-        if not actions:
-            st.success("✅ No immediate actions required. Continue routine monitoring.")
-            return
-        
-        priority_order = ["CRITICAL", "IMMEDIATE", "HIGH", "MEDIUM", "LOW", "ROUTINE"]
-        
-        for priority in priority_order:
-            priority_actions = [a for a in actions if a.get("priority") == priority]
+        if priority_actions:
+            priority_color = {
+                "CRITICAL": "red",
+                "IMMEDIATE": "orange",
+                "HIGH": "orange",
+                "MEDIUM": "yellow",
+                "LOW": "blue",
+                "ROUTINE": "green"
+            }.get(priority, "gray")
             
-            if priority_actions:
-                priority_color = {
-                    "CRITICAL": "red",
-                    "IMMEDIATE": "orange",
-                    "HIGH": "orange",
-                    "MEDIUM": "yellow",
-                    "LOW": "blue",
-                    "ROUTINE": "green"
-                }.get(priority, "gray")
-                
-                st.markdown(f"#### <span style='color:{priority_color}'>{priority}</span>", unsafe_allow_html=True)
-                
-                for idx, action in enumerate(priority_actions, 1):
-                    with st.expander(f"**{idx}. {action['action']}**"):
-                        col1, col2, col3 = st.columns(3)
-                        
-                        with col1:
-                            st.markdown(f"**Timeline:** {action['timeline']}")
-                        
-                        with col2:
-                            st.markdown(f"**PIC:** {action['pic']}")
-                        
-                        with col3:
-                            if "standard" in action:
-                                st.markdown(f"**Standard:** {action['standard']}")
+            st.markdown(f"#### <span style='color:{priority_color}'>{priority}</span>", unsafe_allow_html=True)
+            
+            for idx, action in enumerate(priority_actions, 1):
+                with st.expander(f"**{idx}. {action['action']}**"):
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.markdown(f"**Timeline:** {action['timeline']}")
+                    
+                    with col2:
+                        st.markdown(f"**PIC:** {action['pic']}")
+                    
+                    with col3:
+                        if "standard" in action:
+                            st.markdown(f"**Standard:** {action['standard']}")
 
 
 def generate_excel_report(diagnosis_result):
@@ -273,6 +296,7 @@ def generate_excel_report(diagnosis_result):
     analyses = diagnosis_result["analyses"]
     action_plan = diagnosis_result["action_plan"]
     
+    # Hydraulic
     hydraulic = analyses["hydraulic"]
     data["Category"].extend(["Hydraulic", "Hydraulic", "Hydraulic"])
     data["Parameter"].extend(["NPSHa", "Flow Ratio", "Cavitation Risk"])
@@ -292,6 +316,7 @@ def generate_excel_report(diagnosis_result):
         ""
     ])
     
+    # Electrical
     electrical = analyses["electrical"]
     data["Category"].extend(["Electrical", "Electrical", "Electrical"])
     data["Parameter"].extend(["Voltage Imbalance", "Current Imbalance", "Motor Load"])
@@ -307,6 +332,7 @@ def generate_excel_report(diagnosis_result):
     ])
     data["Recommendation"].extend(electrical['recommendations'][:3] if len(electrical['recommendations']) >= 3 else electrical['recommendations'] + [""] * (3 - len(electrical['recommendations'])))
     
+    # Mechanical
     mechanical = analyses["mechanical"]
     data["Category"].extend(["Mechanical", "Mechanical"])
     data["Parameter"].extend(["Driver Vibration", "Driven Vibration"])
@@ -320,6 +346,7 @@ def generate_excel_report(diagnosis_result):
     ])
     data["Recommendation"].extend(mechanical['recommendations'][:2] if len(mechanical['recommendations']) >= 2 else mechanical['recommendations'] + [""] * (2 - len(mechanical['recommendations'])))
     
+    # Thermal
     thermal = analyses["thermal"]
     data["Category"].extend(["Thermal", "Thermal"])
     data["Parameter"].extend(["Bearing DE Temp", "Bearing NDE Temp"])
@@ -333,6 +360,24 @@ def generate_excel_report(diagnosis_result):
     ])
     data["Recommendation"].extend(thermal['recommendations'][:2] if len(thermal['recommendations']) >= 2 else thermal['recommendations'] + [""] * (2 - len(thermal['recommendations'])))
     
+    # FFT Analysis (BARU)
+    fft_analysis = analyses.get("fft", {})
+    if fft_analysis.get("available", False) and fft_analysis.get("count", 0) > 0:
+        data["Category"].append("FFT Spectrum")
+        data["Parameter"].append("Significant Peaks")
+        data["Value"].append(f"{fft_analysis['count']} peaks detected")
+        data["Status"].append("ANALYSIS_COMPLETE")
+        data["Recommendation"].append(f"RPM: {fft_analysis['rpm_actual']} RPM")
+        
+        # Add individual peak findings
+        for finding in fft_analysis["findings"]:
+            data["Category"].append("FFT Peak")
+            data["Parameter"].append(f"{finding['component']} {finding['direction']}")
+            data["Value"].append(f"{finding['frequency_hz']} Hz ({finding['ratio_to_rpm']}x RPM)")
+            data["Status"].append(finding["confidence"])
+            data["Recommendation"].append(finding["fault"])
+    
+    # Action Plan
     for action in action_plan["actions"]:
         data["Category"].append("Action Plan")
         data["Parameter"].append(action.get("priority", ""))
