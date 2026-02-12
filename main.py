@@ -120,14 +120,15 @@ def main():
                 st.markdown("#### Download Options")
                 
                 excel_file = f"/tmp/pump_diagnosis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-                excel_df.to_excel(excel_file, index=False, sheet_name='Diagnosis Report')
-                
-                with open(excel_file, 'rb') as f:
+                csv_file = f"/tmp/pump_diagnosis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+                excel_df.to_csv(csv_file, index=False)
+
+                with open(csv_file, 'rb') as f:
                     st.download_button(
-                        label="📥 Download Excel Report",
+                        label="📥 Download CSV Report",
                         data=f,
-                        file_name=f"pump_diagnosis_{diagnosis_result['metadata']['pump_tag']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        file_name=f"pump_diagnosis_{diagnosis_result['metadata']['pump_tag']}.csv",
+                        mime="text/csv"
                     )
                 
                 st.info("📄 PDF report generation will be added in future update!")
