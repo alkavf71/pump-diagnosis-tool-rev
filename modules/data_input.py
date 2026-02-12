@@ -254,6 +254,45 @@ def render_thermal_input():
         "temp_nde": float(temp_nde)
     }
 
+def render_fft_input(section_name, key_prefix):
+    """Render form input FFT spectrum untuk H/V/A (optional)"""
+    st.subheader(f"📈 FFT Spectrum Analysis - {section_name} (Optional)")
+    st.caption("Input peak frequency dominan dari ADASH FFT display (1-200 Hz)")
+    
+    directions = ["H", "V", "A"]
+    fft_data = {}
+    
+    for direction in directions:
+        with st.expander(f"Direction {direction} ({FAULT_MAPPING[direction]})"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                peak_freq = st.number_input(
+                    f"Peak Frequency (Hz)",
+                    min_value=0.0,
+                    max_value=200.0,
+                    value=0.0,
+                    step=0.1,
+                    key=f"{key_prefix}_fft_freq_{direction}",
+                    help="Frekuensi peak dominan dari FFT spectrum (misal: 48.3 Hz = 1x RPM)"
+                )
+            
+            with col2:
+                peak_amp = st.number_input(
+                    f"Amplitude (mm/s RMS)",
+                    min_value=0.0,
+                    max_value=50.0,
+                    value=0.0,
+                    step=0.1,
+                    key=f"{key_prefix}_fft_amp_{direction}",
+                    help="Amplitudo peak dominan"
+                )
+            
+            fft_data[f"FFT_Freq_{direction}"] = peak_freq
+            fft_data[f"FFT_Amp_{direction}"] = peak_amp
+    
+    return fft_data
+
 
 def collect_all_inputs():
     """Kumpulkan semua input dari form"""
@@ -290,6 +329,12 @@ def collect_all_inputs():
     
     st.markdown("---")
     col_submit, col_clear = st.columns(2)
+
+        # Section 8: FFT Spectrum (optional)
+    st.markdown("---")
+    fft_driver = render_fft_input("Driver (Motor)", "driver_fft")
+    st.markdown("---")
+    fft_driven = render_fft_input("Driven (Pump)", "driven_fft")
     
     with col_submit:
         submit_button = st.button("🔍 Run Diagnosis", type="primary", use_container_width=True)
@@ -313,6 +358,10 @@ def collect_all_inputs():
         "rpm": rpm_actual,
         "electrical": electrical_data,
         "thermal": thermal_data,
+        "fft": {                  
+            "driver": fft_driver,
+            "driven": fft_driven
+        },
         "submit_clicked": submit_button,
         "clear_clicked": clear_button
     }
