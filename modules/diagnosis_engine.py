@@ -457,16 +457,21 @@ def run_complete_diagnosis(input_data):
     vibration_data = input_data["vibration"]
     metadata = input_data["metadata"]
     
-    # Ambil FFT data (optional - jika tidak ada, default ke empty dict)
+    # === KRUSIAL: Ambil RPM dari input ===
+    actual_rpm = input_data.get("rpm", None)
+    
+    # Ambil FFT data (optional)
     fft_data = input_data.get("fft", {})
-    rpm_actual = input_data.get("rpm", 2950)
     
     hydraulic_report = generate_hydraulic_report(operational_data, spec_data)
+    
+    # === KRUSIAL: Kirim actual_rpm ke electrical analysis ===
     electrical_report = generate_electrical_report(
-    electrical_data, 
-    spec_data,
-    actual_rpm=input_data.get("rpm", None)  # ← TAMBAHKAN INI
+        electrical_data, 
+        spec_data,
+        actual_rpm=actual_rpm  # ← INI YANG MEMBUAT RPM BERPENGARUH
     )
+    
     thermal_report = generate_thermal_report(thermal_data)
     
     mechanical_report = analyze_mechanical_conditions(
@@ -479,7 +484,7 @@ def run_complete_diagnosis(input_data):
     # === FFT Peak Analysis (jika data tersedia) ===
     fft_analysis = analyze_fft_peaks(
         fft_data=fft_data,
-        rpm_actual=rpm_actual,
+        rpm_actual=actual_rpm if actual_rpm else 2950,  # fallback ke 2950 jika None
         spec_data=spec_data
     )
     
@@ -488,7 +493,7 @@ def run_complete_diagnosis(input_data):
         electrical_report,
         mechanical_report,
         thermal_report,
-        fft_analysis=fft_analysis  # Pass FFT analysis ke prioritization
+        fft_analysis=fft_analysis
     )
     
     action_plan = generate_action_plan(diagnosis_result, spec_data, metadata)
@@ -501,7 +506,7 @@ def run_complete_diagnosis(input_data):
             "electrical": electrical_report,
             "thermal": thermal_report,
             "mechanical": mechanical_report,
-            "fft": fft_analysis  # ← FFT analysis ditambahkan ke output
+            "fft": fft_analysis
         },
         "diagnosis": diagnosis_result,
         "action_plan": action_plan,
