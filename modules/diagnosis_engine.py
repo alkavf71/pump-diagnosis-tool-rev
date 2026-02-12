@@ -2,7 +2,124 @@
 from utils.lookup_tables import DIAGNOSIS_PRIORITY
 
 
-def prioritize_diagnosis(hydraulic_report, electrical_report, mechanical_report, thermal_report):
+def analyze_fft_peaks(fft_data, rpm_actual, spec_data):
+    """
+    Analisis peak frequency dari FFT spectrum untuk identifikasi fault spesifik
+    
+    Args:
+        fft_data: Dict dengan keys "driver" dan "driven", masing-masing berisi FFT_Freq_H/V/A & FFT_Amp_H/V/A
+        rpm_actual: RPM aktual pompa/motor (dari tachometer)
+        spec_data: Data spesifikasi pompa (product_type, dll)
+    
+    Returns:
+        Dict dengan hasil analisis FFT
+    """
+    if not fft_data or rpm_actual <= 0:
+        return {
+            "available": False,
+            "message": "FFT data not available or RPM invalid",
+            "findings": []
+        }
+    
+    # Hitung RPM dalam Hz (putaran per detik)
+    rpm_hz = rpm_actual / 60.0
+    
+    findings = []
+    
+    # Analisis untuk Driver
+    driver_fft = fft_data.get("driver", {})
+    for direction in ["H", "V", "A"]:
+        freq_key = f"FFT_Freq_{direction}"
+        amp_key = f"FFT_Amp_{direction}"
+        
+        peak_freq = driver_fft.get(freq_key, 0.0)
+        peak_amp = driver_fft.get(amp_key, 0.0)
+        
+        if peak_freq > 0.5 and peak_amp > 0.5:  # Threshold minimal untuk dianggap signifikan
+            ratio = peak_freq / rpm_hz if rpm_hz > 0 else 0
+            
+            # Identifikasi fault berdasarkan ratio terhadap RPM
+            if 0.95 <= ratio <= 1.05:
+                fault = "1x RPM - Unbalance (Impeller erosion/fouling)"
+                confidence = "HIGH" if peak_amp > 2.0 else "MEDIUM"
+            elif 1.95 <= ratio <= 2.05:
+                fault = "2x RPM - Misalignment (Coupling/pipe strain)"
+                confidence = "HIGH" if peak_amp > 2.0 else "MEDIUM"
+            elif 0.35 <= ratio <= 0.45:
+                fault = "BPFO - Outer Race Bearing Defect"
+                confidence = "MEDIUM"
+            elif 0.55 <= ratio <= 0.65:
+                fault = "BPFI - Inner Race Bearing Defect"
+                confidence = "MEDIUM"
+            elif 6.0 <= ratio <= 8.0:  # Typical vane pass untuk pompa centrifugal (5-7 vanes)
+                fault = "Vane Pass Frequency - Hydraulic Instability"
+                confidence = "MEDIUM"
+            else:
+                fault = f"Unknown ({ratio:.1f}x RPM)"
+                confidence = "LOW"
+            
+            findings.append({
+                "component": "Driver (Motor)",
+                "direction": direction,
+                "frequency_hz": round(peak_freq, 1),
+                "amplitude_mms": round(peak_amp, 2),
+                "ratio_to_rpm": round(ratio, 2),
+                "fault": fault,
+                "confidence": confidence
+            })
+    
+    # Analisis untuk Driven
+    driven_fft = fft_data.get("driven", {})
+    for direction in ["H", "V", "A"]:
+        freq_key = f"FFT_Freq_{direction}"
+        amp_key = f"FFT_Amp_{direction}"
+        
+        peak_freq = driven_fft.get(freq_key, 0.0)
+        peak_amp = driven_fft.get(amp_key, 0.0)
+        
+        if peak_freq > 0.5 and peak_amp > 0.5:
+            ratio = peak_freq / rpm_hz if rpm_hz > 0 else 0
+            
+            if 0.95 <= ratio <= 1.05:
+                fault = "1x RPM - Unbalance (Impeller erosion/fouling)"
+                confidence = "HIGH" if peak_amp > 2.0 else "MEDIUM"
+            elif 1.95 <= ratio <= 2.05:
+                fault = "2x RPM - Misalignment (Coupling/pipe strain)"
+                confidence = "HIGH" if peak_amp > 2.0 else "MEDIUM"
+            elif 0.35 <= ratio <= 0.45:
+                fault = "BPFO - Outer Race Bearing Defect"
+                confidence = "MEDIUM"
+            elif 0.55 <= ratio <= 0.65:
+                fault = "BPFI - Inner Race Bearing Defect"
+                confidence = "MEDIUM"
+            elif 6.0 <= ratio <= 8.0:
+                fault = "Vane Pass Frequency - Hydraulic Instability"
+                confidence = "MEDIUM"
+            else:
+                fault = f"Unknown ({ratio:.1f}x RPM)"
+                confidence = "LOW"
+            
+            findings.append({
+                "component": "Driven (Pump)",
+                "direction": direction,
+                "frequency_hz": round(peak_freq, 1),
+                "amplitude_mms": round(peak_amp, 2),
+                "ratio_to_rpm": round(ratio, 2),
+                "fault": fault,
+                "confidence": confidence
+            })
+    
+    return {
+        "available": True,
+        "rpm_actual": rpm_actual,
+        "rpm_hz": round(rpm_hz, 2),
+        "findings": findings,
+        "count": len(findings),
+        "has_issue": len(findings) > 0 and any(f["confidence"] in ["HIGH", "MEDIUM"] for f in findings)
+    }
+
+
+def prioritize_diagnosis(hydraulic_report, electrical_report, mechanical_report, thermal_report, fft_analysis=None):
     """Prioritaskan diagnosa berdasarkan causal hierarchy"""
     issues = {}
     
@@ -16,6 +133,14 @@ def prioritize_diagnosis(hydraulic_report, electrical_report, mechanical_report,
         issues["ELECTRICAL"] = {
             "report": electrical_report,
             "priority": DIAGNOSIS_PRIORITY.index("ELECTRICAL")
+        }
+    
+    # FFT issue hanya dipertimbangkan jika tidak ada hydraulic/electrical issue
+    if fft_analysis and fft_analysis.get("has_issue", False):
+        # Prioritas FFT = MECHANICAL (karena FFT mengidentifikasi mechanical fault spesifik)
+        issues["MECHANICAL_FFT"] = {
+            "report": fft_analysis,
+            "priority": DIAGNOSIS_PRIORITY.index("MECHANICAL")
         }
     
     if mechanical_report.get("has_issue", False):
@@ -36,6 +161,7 @@ def prioritize_diagnosis(hydraulic_report, electrical_report, mechanical_report,
         primary_type, primary_data = sorted_issues[0]
         primary_report = primary_data["report"]
         
+        # Special handling untuk hydraulic issue
         if primary_type == "HYDRAULIC":
             secondary_note = (
                 "⚠️ Mechanical vibration symptoms may be secondary to hydraulic instability. "
@@ -43,6 +169,10 @@ def prioritize_diagnosis(hydraulic_report, electrical_report, mechanical_report,
             )
         else:
             secondary_note = None
+        
+        # Normalisasi primary_type untuk konsistensi
+        if primary_type == "MECHANICAL_FFT":
+            primary_type = "MECHANICAL"
         
         primary_diagnosis = {
             "type": primary_type,
@@ -188,45 +318,63 @@ def generate_action_plan(diagnosis_result, spec_data, metadata):
     elif primary_type == "MECHANICAL":
         report = primary["report"]
         
-        if report["overall_zone"] == "D":
-            risk_score = risk_factor * 4
-            risk_level = "CRITICAL"
-            
-            actions = [
-                {
-                    "priority": "IMMEDIATE",
-                    "action": f"Schedule shutdown - {report['primary_fault'].lower()} detected",
-                    "timeline": "< 72 hours",
-                    "pic": "Maintenance Team",
-                    "standard": "ISO 10816-3 Zone D"
-                },
-                {
-                    "priority": "HIGH",
-                    "action": f"Perform {report['primary_fault'].lower()} correction",
-                    "timeline": "< 7 days",
-                    "pic": "Maintenance Team",
-                    "standard": "API 686" if "Misalignment" in report['primary_fault'] else "ISO 1940-1"
-                }
-            ]
-        
-        elif report["overall_zone"] == "C":
+        # Cek apakah ini FFT-based diagnosis
+        if "findings" in report:
+            # FFT diagnosis
             risk_score = risk_factor * 3
             risk_level = "HIGH"
             
-            actions = [
-                {
-                    "priority": "HIGH",
-                    "action": f"Schedule {report['primary_fault'].lower()} correction",
-                    "timeline": "< 14 days",
-                    "pic": "Maintenance Team",
-                    "standard": "ISO 10816-3 Zone C"
-                }
-            ]
-        
-        else:
-            risk_score = risk_factor * 2
-            risk_level = "MEDIUM"
             actions = []
+            for finding in report["findings"]:
+                if finding["confidence"] in ["HIGH", "MEDIUM"]:
+                    actions.append({
+                        "priority": "HIGH" if finding["confidence"] == "HIGH" else "MEDIUM",
+                        "action": f"FFT Peak {finding['frequency_hz']} Hz ({finding['ratio_to_rpm']}x RPM): {finding['fault']}",
+                        "timeline": "< 7 days" if finding["confidence"] == "HIGH" else "< 14 days",
+                        "pic": "Vibration Analyst",
+                        "standard": "ISO 13373-3"
+                    })
+        else:
+            # Mechanical diagnosis berbasis vibrasi overall
+            if report["overall_zone"] == "D":
+                risk_score = risk_factor * 4
+                risk_level = "CRITICAL"
+                
+                actions = [
+                    {
+                        "priority": "IMMEDIATE",
+                        "action": f"Schedule shutdown - {report['primary_fault'].lower()} detected",
+                        "timeline": "< 72 hours",
+                        "pic": "Maintenance Team",
+                        "standard": "ISO 10816-3 Zone D"
+                    },
+                    {
+                        "priority": "HIGH",
+                        "action": f"Perform {report['primary_fault'].lower()} correction",
+                        "timeline": "< 7 days",
+                        "pic": "Maintenance Team",
+                        "standard": "API 686" if "Misalignment" in report['primary_fault'] else "ISO 1940-1"
+                    }
+                ]
+            
+            elif report["overall_zone"] == "C":
+                risk_score = risk_factor * 3
+                risk_level = "HIGH"
+                
+                actions = [
+                    {
+                        "priority": "HIGH",
+                        "action": f"Schedule {report['primary_fault'].lower()} correction",
+                        "timeline": "< 14 days",
+                        "pic": "Maintenance Team",
+                        "standard": "ISO 10816-3 Zone C"
+                    }
+                ]
+            
+            else:
+                risk_score = risk_factor * 2
+                risk_level = "MEDIUM"
+                actions = []
     
     elif primary_type == "THERMAL":
         report = primary["report"]
@@ -309,6 +457,10 @@ def run_complete_diagnosis(input_data):
     vibration_data = input_data["vibration"]
     metadata = input_data["metadata"]
     
+    # Ambil FFT data (optional - jika tidak ada, default ke empty dict)
+    fft_data = input_data.get("fft", {})
+    rpm_actual = input_data.get("rpm", 2950)
+    
     hydraulic_report = generate_hydraulic_report(operational_data, spec_data)
     electrical_report = generate_electrical_report(electrical_data, spec_data)
     thermal_report = generate_thermal_report(thermal_data)
@@ -320,11 +472,19 @@ def run_complete_diagnosis(input_data):
         spec_data["product_type"]
     )
     
+    # === FFT Peak Analysis (jika data tersedia) ===
+    fft_analysis = analyze_fft_peaks(
+        fft_data=fft_data,
+        rpm_actual=rpm_actual,
+        spec_data=spec_data
+    )
+    
     diagnosis_result = prioritize_diagnosis(
         hydraulic_report,
         electrical_report,
         mechanical_report,
-        thermal_report
+        thermal_report,
+        fft_analysis=fft_analysis  # Pass FFT analysis ke prioritization
     )
     
     action_plan = generate_action_plan(diagnosis_result, spec_data, metadata)
@@ -336,7 +496,8 @@ def run_complete_diagnosis(input_data):
             "hydraulic": hydraulic_report,
             "electrical": electrical_report,
             "thermal": thermal_report,
-            "mechanical": mechanical_report
+            "mechanical": mechanical_report,
+            "fft": fft_analysis  # ← FFT analysis ditambahkan ke output
         },
         "diagnosis": diagnosis_result,
         "action_plan": action_plan,
@@ -359,8 +520,13 @@ def generate_summary(diagnosis_result, action_plan):
         summary_text = f"⚡ **PRIMARY ISSUE: Electrical** - {primary['report']['overall_status']} condition detected"
         color = "red" if primary['report']['overall_status'] == 'CRITICAL' else "orange"
     elif primary_type == "MECHANICAL":
-        summary_text = f"🔧 **PRIMARY ISSUE: Mechanical** - Zone {primary['report']['overall_zone']} vibration, {primary['report']['primary_fault']}"
-        color = "red" if primary['report']['overall_zone'] == 'D' else "orange"
+        # Cek apakah ini FFT-based atau vibration-based
+        if "findings" in primary['report']:
+            summary_text = f"🔧 **PRIMARY ISSUE: Mechanical (FFT)** - {len(primary['report']['findings'])} significant peaks detected"
+            color = "orange"
+        else:
+            summary_text = f"🔧 **PRIMARY ISSUE: Mechanical** - Zone {primary['report']['overall_zone']} vibration, {primary['report']['primary_fault']}"
+            color = "red" if primary['report']['overall_zone'] == 'D' else "orange"
     elif primary_type == "THERMAL":
         summary_text = f"🌡️ **PRIMARY ISSUE: Thermal** - Bearing temperature {primary['report']['overall_status']}"
         color = "red" if primary['report']['overall_status'] == 'CRITICAL' else "orange"
