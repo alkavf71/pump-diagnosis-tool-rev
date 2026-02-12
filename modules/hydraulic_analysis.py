@@ -1,10 +1,10 @@
-"""Modul untuk analisis data hidraulis (NPSHa, BEP, dll)"""
+"""Modul untuk analisis data hidraulis (NPSHa, BEP, HF cavitation detection)"""
 from utils.calculations import (
     calculate_npsha,
     calculate_differential_head,
     calculate_flow_ratio
 )
-from utils.lookup_tables import PUMP_SIZE_DEFAULTS
+from utils.lookup_tables import PUMP_SIZE_DEFAULTS, PRODUCT_PROPERTIES
 
 
 def analyze_hydraulic_conditions(
@@ -13,29 +13,67 @@ def analyze_hydraulic_conditions(
     flow_rate,
     product_type,
     pump_size,
-    temperature=None
+    temperature=None,
+    hf_5_16khz_driver=0.0,
+    hf_5_16khz_driven=0.0
 ):
-    """Analisis kondisi hidraulis pompa"""
+    """
+    Analisis kondisi hidraulis pompa + HF-based cavitation detection
+    
+    API 610 12th Ed. §6.3.3:
+    "Monitor high-frequency vibration (5-16 kHz) as independent cavitation indicator — 
+     independent of overall RMS vibration and NPSHa calculation."
+    """
     npshr = PUMP_SIZE_DEFAULTS[pump_size]["npshr_m"]
     bep_flow = PUMP_SIZE_DEFAULTS[pump_size]["bep_flow_m3h"]
     
+    # Hitung NPSHa
     npsha = calculate_npsha(suction_pressure, product_type, temperature)
     head = calculate_differential_head(discharge_pressure, suction_pressure, product_type)
     flow_ratio, flow_status = calculate_flow_ratio(flow_rate, pump_size)
     
+    # === KRUSIAL: HF-BASED CAVITATION DETECTION (API 610 §6.3.3) ===
+    hf_max = max(hf_5_16khz_driver, hf_5_16khz_driven)
+    
+    # Threshold berbasis produk (API 682 §5.4.2: stricter for volatile hydrocarbons)
+    cavitation_threshold = 0.3 if product_type in ["Gasoline", "Avtur", "Naphtha"] else 0.5
+    
+    hf_cavitation_risk = "HIGH" if hf_max > cavitation_threshold else "LOW"
+    hf_cavitation_status = (
+        f"⚠️ HF vibration {hf_max:.2f}g > {cavitation_threshold}g threshold - cavitation likely"
+        if hf_cavitation_risk == "HIGH"
+        else f"✅ HF vibration {hf_max:.2f}g within normal range"
+    )
+    
+    # Safety margin untuk NPSHa (API 610 recommendation)
     safety_margin = 1.0
     npsha_margin = npsha - (npshr + safety_margin)
     
-    if npsha_margin < 0:
+    # === COMBINE HF + NPSHa UNTUK HYDRAULIC ISSUE DETECTION ===
+    has_hydraulic_issue = False
+    cavitation_risk = "LOW"
+    cavitation_status = ""
+    
+    if hf_cavitation_risk == "HIGH" and npsha_margin < 1.0:
+        # HF + low NPSHa = CONFIRMED cavitation (API 610 §6.3.3)
+        has_hydraulic_issue = True
         cavitation_risk = "HIGH"
-        cavitation_status = "⚠️ CRITICAL: NPSHa < NPSHr + safety margin"
-    elif npsha_margin < 1.0:
+        cavitation_status = f"🚨 CONFIRMED CAVITATION: HF={hf_max:.2f}g + NPSHa margin={npsha_margin:.2f}m"
+    elif hf_cavitation_risk == "HIGH":
+        # HF tinggi tapi NPSHa OK = SUSPECTED cavitation (early stage)
+        has_hydraulic_issue = True
         cavitation_risk = "MEDIUM"
-        cavitation_status = "⚠️ WARNING: Low NPSHa margin"
+        cavitation_status = f"⚠️ SUSPECTED CAVITATION: HF={hf_max:.2f}g (verify suction conditions)"
+    elif npsha_margin < 0:
+        # NPSHa rendah tanpa HF tinggi = potential cavitation
+        has_hydraulic_issue = True
+        cavitation_risk = "MEDIUM"
+        cavitation_status = f"⚠️ LOW NPSHa margin ({npsha_margin:.2f}m) - cavitation risk"
     else:
         cavitation_risk = "LOW"
-        cavitation_status = "✅ NPSHa adequate"
+        cavitation_status = "✅ NPSHa adequate + HF normal"
     
+    # Flow status assessment
     if flow_status == "RECIRCULATION_RISK":
         flow_recommendation = "⚠️ Flow < 60% BEP - risk of recirculation & vibration"
     elif flow_status == "OVERLOAD_CAVITATION_RISK":
@@ -49,17 +87,21 @@ def analyze_hydraulic_conditions(
         "npsha_margin": round(npsha_margin, 2),
         "cavitation_risk": cavitation_risk,
         "cavitation_status": cavitation_status,
+        "hf_cavitation_risk": hf_cavitation_risk,
+        "hf_cavitation_status": hf_cavitation_status,
+        "hf_max": round(hf_max, 2),
         "head": head,
         "flow_rate": flow_rate,
         "bep_flow": bep_flow,
         "flow_ratio": flow_ratio,
         "flow_status": flow_status,
         "flow_recommendation": flow_recommendation,
-        "has_issue": cavitation_risk != "LOW" or flow_status != "NORMAL"
+        "has_issue": has_hydraulic_issue,
+        "standard": "API 610 §6.3.3, API 682 §5.4.2"
     }
 
 
-def generate_hydraulic_report(operational_data, spec_data):
+def generate_hydraulic_report(operational_data, spec_data, hf_5_16khz_driver=0.0, hf_5_16khz_driven=0.0):
     """Generate laporan analisis hidraulis"""
     suction = operational_data.get("suction_pressure", 0.0)
     discharge = operational_data.get("discharge_pressure", 0.0)
@@ -73,7 +115,9 @@ def generate_hydraulic_report(operational_data, spec_data):
         discharge_pressure=discharge,
         flow_rate=flow,
         product_type=product,
-        pump_size=pump_size
+        pump_size=pump_size,
+        hf_5_16khz_driver=hf_5_16khz_driver,
+        hf_5_16khz_driven=hf_5_16khz_driven
     )
     
     return analysis
