@@ -170,47 +170,93 @@ def display_detailed_analysis(diagnosis_result):
             for rec in thermal['recommendations']:
                 st.info(rec)
 
-
-def display_action_plan(action_plan):
-    """Display action plan dengan timeline"""
-    st.markdown("### 📋 Recommended Action Plan")
+def display_detailed_analysis(diagnosis_result):
+    """Display detailed analysis per component"""
+    analyses = diagnosis_result["analyses"]
     
-    actions = action_plan["actions"]
+    st.markdown("### 🔍 Detailed Analysis")
     
-    if not actions:
-        st.success("✅ No immediate actions required. Continue routine monitoring.")
-        return
+    # Tambahkan tab FFT
+    tabs = st.tabs(["Hydraulic", "Electrical", "Mechanical", "Thermal", "FFT Spectrum"])
     
-    priority_order = ["CRITICAL", "IMMEDIATE", "HIGH", "MEDIUM", "LOW", "ROUTINE"]
+    # ... existing tabs 0-3 ...
     
-    for priority in priority_order:
-        priority_actions = [a for a in actions if a.get("priority") == priority]
+    # Tab 5: FFT Spectrum
+    with tabs[4]:
+        fft_analysis = analyses.get("fft", {})
         
-        if priority_actions:
-            priority_color = {
-                "CRITICAL": "red",
-                "IMMEDIATE": "orange",
-                "HIGH": "orange",
-                "MEDIUM": "yellow",
-                "LOW": "blue",
-                "ROUTINE": "green"
-            }.get(priority, "gray")
-            
-            st.markdown(f"#### <span style='color:{priority_color}'>{priority}</span>", unsafe_allow_html=True)
-            
-            for idx, action in enumerate(priority_actions, 1):
-                with st.expander(f"**{idx}. {action['action']}**"):
+        if not fft_analysis.get("available", False):
+            st.info("ℹ️ FFT spectrum data not available or not entered")
+            return
+        
+        st.markdown(f"**RPM Actual:** {fft_analysis['rpm_actual']} RPM ({fft_analysis['rpm_hz']} Hz)")
+        st.markdown(f"**Peak Findings:** {fft_analysis['count']} significant peaks detected")
+        
+        if fft_analysis["count"] > 0:
+            for idx, finding in enumerate(fft_analysis["findings"], 1):
+                with st.expander(f"🔍 Peak #{idx}: {finding['component']} - {finding['direction']}"):
                     col1, col2, col3 = st.columns(3)
                     
                     with col1:
-                        st.markdown(f"**Timeline:** {action['timeline']}")
+                        st.metric("Frequency", f"{finding['frequency_hz']} Hz")
+                        st.metric("Ratio to RPM", f"{finding['ratio_to_rpm']}x")
                     
                     with col2:
-                        st.markdown(f"**PIC:** {action['pic']}")
+                        st.metric("Amplitude", f"{finding['amplitude_mms']} mm/s")
+                        st.metric("Confidence", finding["confidence"])
                     
                     with col3:
-                        if "standard" in action:
-                            st.markdown(f"**Standard:** {action['standard']}")
+                        st.markdown(f"**Fault:** {finding['fault']}")
+                        
+                        # Warna berdasarkan confidence
+                        if finding["confidence"] == "HIGH":
+                            st.error("⚠️ HIGH CONFIDENCE - Requires attention")
+                        elif finding["confidence"] == "MEDIUM":
+                            st.warning("⚠️ MEDIUM CONFIDENCE - Monitor closely")
+        else:
+            st.success("✅ No significant peaks detected in FFT spectrum")
+
+
+    def display_action_plan(action_plan):
+        """Display action plan dengan timeline"""
+        st.markdown("### 📋 Recommended Action Plan")
+        
+        actions = action_plan["actions"]
+        
+        if not actions:
+            st.success("✅ No immediate actions required. Continue routine monitoring.")
+            return
+        
+        priority_order = ["CRITICAL", "IMMEDIATE", "HIGH", "MEDIUM", "LOW", "ROUTINE"]
+        
+        for priority in priority_order:
+            priority_actions = [a for a in actions if a.get("priority") == priority]
+            
+            if priority_actions:
+                priority_color = {
+                    "CRITICAL": "red",
+                    "IMMEDIATE": "orange",
+                    "HIGH": "orange",
+                    "MEDIUM": "yellow",
+                    "LOW": "blue",
+                    "ROUTINE": "green"
+                }.get(priority, "gray")
+                
+                st.markdown(f"#### <span style='color:{priority_color}'>{priority}</span>", unsafe_allow_html=True)
+                
+                for idx, action in enumerate(priority_actions, 1):
+                    with st.expander(f"**{idx}. {action['action']}**"):
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            st.markdown(f"**Timeline:** {action['timeline']}")
+                        
+                        with col2:
+                            st.markdown(f"**PIC:** {action['pic']}")
+                        
+                        with col3:
+                            if "standard" in action:
+                                st.markdown(f"**Standard:** {action['standard']}")
 
 
 def generate_excel_report(diagnosis_result):
