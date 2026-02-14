@@ -29,7 +29,7 @@ def display_diagnosis_summary(diagnosis_result):
         unsafe_allow_html=True
     )
     
-    # === TAMPILKAN SECONDARY NOTE JIKA ADA ===
+    # === FIX KEYERROR: Akses primary_diagnosis dari diagnosis dictionary ===
     secondary_note = diagnosis_result["diagnosis"]["primary_diagnosis"].get("secondary_note")
     if secondary_note:
         st.warning(secondary_note)
@@ -250,10 +250,79 @@ def display_detailed_analysis(diagnosis_result):
             st.success("✅ No significant peaks detected in FFT spectrum")
 
 
-def display_action_plan(action_plan):
+def display_action_plan(action_plan, diagnosis_result=None):
     """Display action plan dengan timeline & mandatory re-measure flag"""
     st.markdown("### 📋 Recommended Action Plan")
     
+    # === POWER-OFF TEST VALIDATION (inline logic - no separate function) ===
+    if diagnosis_result is not None:
+        primary_issue = action_plan.get("primary_issue", "NORMAL")
+        electrical_report = diagnosis_result["analyses"].get("electrical", {})
+        
+        # Ekstrak parameter electrical dengan safe defaults
+        voltage_imbalance = electrical_report.get("voltage", {}).get("imbalance_pct", 100.0)
+        current_imbalance = electrical_report.get("current", {}).get("imbalance_pct", 100.0)
+        load_pct = electrical_report.get("load", {}).get("percentage", 0.0)
+        slip_pct = electrical_report.get("slip", {}).get("slip_pct", 100.0)
+        
+        # Cek apakah electrical parameters normal
+        electrical_ok = (
+            voltage_imbalance <= 2.0 and
+            current_imbalance <= 5.0 and
+            load_pct <= 110.0 and
+            slip_pct >= -2.0 and
+            slip_pct <= 5.0
+        )
+        
+        # Tampilkan guidance hanya jika mechanical issue + electrical normal
+        if primary_issue == "MECHANICAL" and electrical_ok:
+            st.markdown("### 🔌 Power-Off Test Validation Required")
+            st.warning("""
+            ⚠️ **API 610 Annex L.3.2: Root Cause Validation Required**  
+            Vibration symptoms indicate mechanical issue, but electrical parameters are normal.  
+            **Do not perform mechanical repair (balancing/alignment) before validating root cause** with power-off test.
+            """)
+            
+            with st.expander("🔧 Power-Off Test Procedure (Step-by-Step)", expanded=True):
+                st.markdown("""
+                **Objective**: Differentiate mechanical unbalance (impeller erosion) vs electrical unbalance (rotor winding issue)
+                
+                **Procedure**:
+                1. **Baseline Measurement**  
+                   - Measure vibration (mm/s RMS) while motor running at normal load
+                   - Record values for H/V/A directions at DE & NDE
+                
+                2. **Controlled Shutdown**  
+                   - Shut down motor safely following terminal procedures
+                   - Start timer immediately after shutdown command
+                
+                3. **Coast-Down Monitoring** (critical phase - 2-3 minutes)  
+                   - Measure vibration every 15 seconds during coast-down
+                   - Pay special attention to first 60 seconds (rapid RPM decay)
+                
+                4. **Interpretation**:
+                   | Observation | Root Cause | Required Action |
+                   |-------------|------------|-----------------|
+                   | Vibration decays **GRADUALLY** with RPM<br>(e.g., 5.0 → 3.0 → 1.5 mm/s as RPM drops) | ✅ **MECHANICAL UNBALANCE**<br>(Impeller erosion/fouling) | Proceed with dynamic balancing |
+                   | Vibration drops **IMMEDIATELY** to <1.0 mm/s<br>(within 5-10 seconds of shutdown) | ⚡ **ELECTRICAL UNBALANCE**<br>(Rotor winding issue) | **DO NOT BALANCE** - Schedule electrical inspection |
+                   | Vibration **PERSISTS** after shutdown<br>(>1.5 mm/s when RPM < 100) | 🔧 **BEARING DEFECT/LOOSENESS** | Inspect bearings & foundation bolts |
+                
+                5. **Documentation**  
+                   - Record coast-down vibration profile (time vs vibration)
+                   - Attach to work order for repair authorization
+                
+                **Safety Note**:  
+                ⚠️ Only perform on non-critical pumps with approved shutdown procedure.  
+                ⚠️ Never perform on pumps serving firewater or critical process streams without management approval.
+                """)
+                
+                st.caption("""
+                **Standard Reference**:  
+                • API 610 12th Ed. Annex L.3.2: "Vibration is a symptom, not a root cause. Always validate root cause before mechanical intervention."  
+                • ISO 13373-1:2012 §5.3.2: "Electrical faults may manifest as vibration symptoms indistinguishable from mechanical faults without power-off validation."
+                """)
+    
+    # Tampilkan action items
     actions = action_plan["actions"]
     
     if not actions:
