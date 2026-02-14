@@ -34,10 +34,6 @@ def display_diagnosis_summary(diagnosis_result):
     if secondary_note:
         st.warning(secondary_note)
     
-    # === COMPLIANCE STATEMENT (ISO 55001 §8.2) ===
-    st.markdown("### 📜 Compliance Statement")
-    st.markdown(summary["compliance_statement"], unsafe_allow_html=True)
-
 
 def display_detailed_analysis(diagnosis_result):
     """Display detailed analysis per component"""
