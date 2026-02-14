@@ -30,7 +30,7 @@ def display_diagnosis_summary(diagnosis_result):
     )
     
     # === TAMPILKAN SECONDARY NOTE JIKA ADA ===
-    secondary_note = diagnosis_result["primary_diagnosis"].get("secondary_note")
+    secondary_note = diagnosis_result["diagnosis"]["primary_diagnosis"].get("secondary_note")
     if secondary_note:
         st.warning(secondary_note)
     
