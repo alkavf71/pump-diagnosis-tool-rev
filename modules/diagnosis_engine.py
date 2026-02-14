@@ -107,6 +107,40 @@ def analyze_fft_peaks(fft_data, rpm_actual, spec_data):
     }
 
 
+def requires_power_off_test(primary_type, electrical_report):
+    """
+    Determine if power-off test validation is required to differentiate 
+    mechanical vs electrical unbalance (API 610 Annex L.3.2).
+    
+    Returns True if:
+    - Primary diagnosis is MECHANICAL
+    - Electrical parameters are within normal limits:
+        * Voltage imbalance <= 2%
+        * Current imbalance <= 5%
+        * Motor load <= 110% FLA
+        * Slip between -2% and 5% (normal operating range)
+    """
+    if primary_type != "MECHANICAL":
+        return False
+    
+    # Extract electrical parameters with safe defaults
+    voltage_imbalance = electrical_report.get("voltage", {}).get("imbalance_pct", 100.0)
+    current_imbalance = electrical_report.get("current", {}).get("imbalance_pct", 100.0)
+    load_pct = electrical_report.get("load", {}).get("percentage", 0.0)
+    slip_pct = electrical_report.get("slip", {}).get("slip_pct", 100.0)
+    
+    # Check if all parameters are within normal limits
+    electrical_ok = (
+        voltage_imbalance <= 2.0 and
+        current_imbalance <= 5.0 and
+        load_pct <= 110.0 and
+        slip_pct >= -2.0 and
+        slip_pct <= 5.0
+    )
+    
+    return electrical_ok
+
+
 def prioritize_diagnosis(hydraulic_report, electrical_report, mechanical_report, thermal_report, fft_analysis=None):
     """
     Prioritaskan diagnosa berdasarkan causal hierarchy
@@ -195,6 +229,9 @@ def prioritize_diagnosis(hydraulic_report, electrical_report, mechanical_report,
             "secondary_note": secondary_note,
             "standard": primary_standard
         }
+        
+        # === BARU: Tambahkan flag untuk power-off test validation ===
+        requires_validation = requires_power_off_test(primary_type, electrical_report)
     else:
         primary_diagnosis = {
             "type": "NORMAL",
@@ -202,9 +239,11 @@ def prioritize_diagnosis(hydraulic_report, electrical_report, mechanical_report,
             "secondary_note": None,
             "standard": "ISO 10816-3 Zone A"
         }
+        requires_validation = False
     
     return {
         "primary_diagnosis": primary_diagnosis,
+        "requires_power_off_test": requires_validation,  # ← FLAG BARU UNTUK VALIDASI
         "all_issues": sorted_issues,
         "issue_count": len(sorted_issues),
         "has_issues": len(sorted_issues) > 0
@@ -376,13 +415,32 @@ def generate_action_plan(diagnosis_result, spec_data, metadata):
     elif primary_type == "MECHANICAL":
         report = primary["report"]
         
+        # === BARU: Tambahkan power-off test sebagai action item pertama jika diperlukan ===
+        actions = []
+        if diagnosis_result.get("requires_power_off_test", False):
+            actions.append({
+                "priority": "MEDIUM",
+                "action": "⚠️ POWER-OFF TEST REQUIRED: Differentiate electrical vs mechanical unbalance",
+                "timeline": "Before mechanical repair",
+                "pic": "Vibration Analyst",
+                "standard": "API 610 Annex L.3.2",
+                "validation_procedure": (
+                    "1. Measure vibration while motor running\n"
+                    "2. Shut down motor safely\n"
+                    "3. Measure vibration during coast-down (2-3 min)\n"
+                    "4. Interpret:\n"
+                    "   • Gradual decay with RPM → MECHANICAL unbalance\n"
+                    "   • Immediate drop to <1.0 mm/s → ELECTRICAL unbalance\n"
+                    "   • Persists after shutdown → bearing defect/looseness"
+                )
+            })
+        
         if "findings" in report:
             # FFT diagnosis
             base_risk = product_risk_factor * 3
             risk_score = min(int(base_risk * age_risk_factor), 100)
             risk_level = "HIGH"
             
-            actions = []
             for finding in report["findings"]:
                 if finding["confidence"] in ["HIGH", "MEDIUM"]:
                     actions.append({
@@ -399,7 +457,7 @@ def generate_action_plan(diagnosis_result, spec_data, metadata):
                 risk_score = min(int(base_risk * age_risk_factor), 100)
                 risk_level = "CRITICAL"
                 
-                actions = [
+                actions.extend([
                     {
                         "priority": "IMMEDIATE",
                         "action": f"Schedule shutdown - {report['primary_fault'].lower()} detected",
@@ -414,28 +472,26 @@ def generate_action_plan(diagnosis_result, spec_data, metadata):
                         "pic": "Maintenance Team",
                         "standard": "API 686" if "Misalignment" in report['primary_fault'] else "ISO 1940-1"
                     }
-                ]
+                ])
             
             elif report["overall_zone"] == "C":
                 base_risk = product_risk_factor * 3
                 risk_score = min(int(base_risk * age_risk_factor), 100)
                 risk_level = "HIGH"
                 
-                actions = [
-                    {
-                        "priority": "HIGH",
-                        "action": f"Schedule {report['primary_fault'].lower()} correction",
-                        "timeline": "< 14 days",
-                        "pic": "Maintenance Team",
-                        "standard": "ISO 10816-3 Zone C"
-                    }
-                ]
+                actions.append({
+                    "priority": "HIGH",
+                    "action": f"Schedule {report['primary_fault'].lower()} correction",
+                    "timeline": "< 14 days",
+                    "pic": "Maintenance Team",
+                    "standard": "ISO 10816-3 Zone C"
+                })
             
             else:
                 base_risk = product_risk_factor * 2
                 risk_score = min(int(base_risk * age_risk_factor), 100)
                 risk_level = "MEDIUM"
-                actions = []
+                # actions remains empty (only power-off test if applicable)
     
     elif primary_type == "THERMAL":
         report = primary["report"]
@@ -488,14 +544,24 @@ def generate_action_plan(diagnosis_result, spec_data, metadata):
         risk_level = "UNKNOWN"
         actions = []
     
-    if risk_score > 0:
-        actions.append({
+    if risk_score > 0 and not actions:  # Jika tidak ada actions khusus tapi risk >0
+        actions = [{
             "priority": "ROUTINE",
             "action": "Update asset register & schedule follow-up inspection",
             "timeline": "After completion",
             "pic": "Reliability Engineer",
             "standard": "ISO 55001 §8.2"
-        })
+        }]
+    elif risk_score > 0:
+        # Tambahkan routine action di akhir jika belum ada
+        if actions[-1].get("priority") != "ROUTINE":
+            actions.append({
+                "priority": "ROUTINE",
+                "action": "Update asset register & schedule follow-up inspection",
+                "timeline": "After completion",
+                "pic": "Reliability Engineer",
+                "standard": "ISO 55001 §8.2"
+            })
     
     return {
         "risk_score": risk_score,
@@ -603,11 +669,16 @@ def generate_summary(diagnosis_result, action_plan):
         summary_text = f"⚡ **PRIMARY ISSUE: Electrical** - {primary['report']['overall_status']} condition detected<br>**Standard:** {primary['standard']}"
         color = "red" if primary['report']['overall_status'] == 'CRITICAL' else "orange"
     elif primary_type == "MECHANICAL":
+        # === BARU: Tambahkan indikasi jika power-off test diperlukan ===
+        power_off_note = ""
+        if diagnosis_result.get("requires_power_off_test", False):
+            power_off_note = "<br>⚠️ <span style='color:orange'>POWER-OFF TEST REQUIRED before mechanical repair</span>"
+        
         if "findings" in primary['report']:
-            summary_text = f"🔧 **PRIMARY ISSUE: Mechanical (FFT)** - {len(primary['report']['findings'])} significant peaks detected<br>**Standard:** {primary['standard']}"
+            summary_text = f"🔧 **PRIMARY ISSUE: Mechanical (FFT)** - {len(primary['report']['findings'])} significant peaks detected<br>**Standard:** {primary['standard']}{power_off_note}"
             color = "orange"
         else:
-            summary_text = f"🔧 **PRIMARY ISSUE: Mechanical** - Zone {primary['report']['overall_zone']} vibration, {primary['report']['primary_fault']}<br>**Standard:** {primary['standard']}"
+            summary_text = f"🔧 **PRIMARY ISSUE: Mechanical** - Zone {primary['report']['overall_zone']} vibration, {primary['report']['primary_fault']}<br>**Standard:** {primary['standard']}{power_off_note}"
             color = "red" if primary['report']['overall_zone'] == 'D' else "orange"
     elif primary_type == "THERMAL":
         summary_text = f"🌡️ **PRIMARY ISSUE: Thermal** - Bearing temperature {primary['report']['overall_status']}<br>**Standard:** API 610 §11.3"
@@ -629,6 +700,7 @@ def generate_summary(diagnosis_result, action_plan):
             "• ISO 13373-1:2012 §5.3.2 (Vibration as symptom, not root cause)<br>"
             "• IEC 60034-1:2017 §4.2 (Slip monitoring for overload detection)<br>"
             "• ISO 15243:2017 §5.2 (Demodulation for bearing defect detection)<br>"
-            "• ISO 55001:2014 §8.2 (Age-based risk adjustment)"
+            "• ISO 55001:2014 §8.2 (Age-based risk adjustment)<br>"
+            "• <span style='color:orange'>API 610 Annex L.3.2: Power-off test required when electrical parameters normal but vibration elevated</span>"
         )
     }
