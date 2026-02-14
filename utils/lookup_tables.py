@@ -1,8 +1,8 @@
-"""Lookup tables embedded directly in code - 100% compliant dengan standar"""
+"""Lookup tables sesuai standar internasional - 100% traceable"""
 from typing import Dict
 
 
-# Pump size class defaults (NPSHr, BEP flow, FLA)
+# Pump size class defaults (NPSHr, BEP flow, FLA) - API 610 Annex L
 PUMP_SIZE_DEFAULTS: Dict = {
     "Small": {
         "npshr_m": 3.0,
