@@ -36,7 +36,7 @@ def display_diagnosis_summary(diagnosis_result):
     
     # === COMPLIANCE STATEMENT (ISO 55001 §8.2) ===
     st.markdown("### 📜 Compliance Statement")
-    st.caption(summary["compliance_statement"])
+    st.markdown(summary["compliance_statement"], unsafe_allow_html=True)
 
 
 def display_detailed_analysis(diagnosis_result):
