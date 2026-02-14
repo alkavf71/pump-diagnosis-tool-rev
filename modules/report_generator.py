@@ -1,10 +1,10 @@
-"""Modul untuk generate laporan - Compliance Statement dihapus dari dashboard (tetap ada di Excel)"""
+"""Modul untuk generate laporan dengan compliance statement"""
 import streamlit as st
 import pandas as pd
 
 
 def display_diagnosis_summary(diagnosis_result):
-    """Display summary diagnosis - TANPA Compliance Statement di dashboard"""
+    """Display summary diagnosis"""
     summary = diagnosis_result["summary"]
     
     st.markdown(f"### 📊 Executive Summary")
@@ -29,11 +29,10 @@ def display_diagnosis_summary(diagnosis_result):
         unsafe_allow_html=True
     )
     
-    # Tampilkan secondary note jika ada (causal hierarchy warning)
+    # Tampilkan secondary note jika ada
     secondary_note = diagnosis_result["diagnosis"]["primary_diagnosis"].get("secondary_note")
     if secondary_note:
         st.warning(secondary_note)
-    # NOTE: Compliance Statement SUDAH DIHAPUS dari sini - tetap ada di Excel report
 
 
 def display_detailed_analysis(diagnosis_result):
@@ -42,7 +41,7 @@ def display_detailed_analysis(diagnosis_result):
     
     st.markdown("### 🔍 Detailed Analysis")
     
-    tabs = st.tabs(["Hydraulic", "Electrical", "Mechanical", "Thermal", "FFT Spectrum"])
+    tabs = st.tabs(["Hydraulic", "Electrical", "Mechanical", "Thermal", "FFT Motor", "FFT Pump"])
     
     # Tab 1: Hydraulic
     with tabs[0]:
@@ -122,19 +121,19 @@ def display_detailed_analysis(diagnosis_result):
         
         with col1:
             st.metric(
-                "Driver Max Vib",
-                f"{mechanical['driver']['averages']['Overall_Max']:.2f} mm/s",
+                "Motor Max Vib",
+                f"{mechanical['motor']['averages']['Overall_Max']:.2f} mm/s",
                 delta=None
             )
-            st.markdown(f"*Zone {mechanical['driver']['overall_zone']}*")
+            st.markdown(f"*Zone {mechanical['motor']['overall_zone']}*")
         
         with col2:
             st.metric(
-                "Driven Max Vib",
-                f"{mechanical['driven']['averages']['Overall_Max']:.2f} mm/s",
+                "Pump Max Vib",
+                f"{mechanical['pump']['averages']['Overall_Max']:.2f} mm/s",
                 delta=None
             )
-            st.markdown(f"*Zone {mechanical['driven']['overall_zone']}*")
+            st.markdown(f"*Zone {mechanical['pump']['overall_zone']}*")
         
         with col3:
             st.metric(
@@ -158,7 +157,7 @@ def display_detailed_analysis(diagnosis_result):
         
         with col1:
             st.metric(
-                "Bearing DE Temp",
+                "Motor DE Temp",
                 f"{thermal['de']['temperature']:.1f}°C",
                 delta=f"{thermal['de']['rise_above_ambient']:.1f}°C above ambient"
             )
@@ -166,16 +165,16 @@ def display_detailed_analysis(diagnosis_result):
         
         with col2:
             st.metric(
-                "Bearing NDE Temp",
-                f"{thermal['nde']['temperature']:.1f}°C",
-                delta=f"{thermal['nde']['rise_above_ambient']:.1f}°C above ambient"
+                "Pump NDE Temp",
+                f"{thermal['pump_nde']['temperature']:.1f}°C",
+                delta=f"{thermal['pump_nde']['rise_above_ambient']:.1f}°C above ambient"
             )
-            st.markdown(f"*Status: {thermal['nde']['status']}*")
+            st.markdown(f"*Status: {thermal['pump_nde']['status']}*")
         
         with col3:
             st.metric(
-                "Temp Difference",
-                f"{thermal['delta_temp']:.1f}°C",
+                "Max Rise",
+                f"{thermal['max_rise']:.1f}°C",
                 delta=None
             )
         
@@ -185,13 +184,12 @@ def display_detailed_analysis(diagnosis_result):
                 st.info(rec)
             st.caption("**Standard:** API 610 §11.3")
     
-    # Tab 5: FFT Spectrum
+    # Tab 5: FFT Motor
     with tabs[4]:
-        fft_analysis = analyses.get("fft", {})
+        fft_analysis = analyses.get("fft_motor", {})
         
         if not fft_analysis.get("available", False):
             st.info("ℹ️ FFT spectrum data not available or not entered")
-            st.caption("To enable FFT analysis, input peak frequency data in the FFT Spectrum section of the form.")
             return
         
         st.markdown(f"**RPM Actual:** {fft_analysis['rpm_actual']} RPM ({fft_analysis['rpm_hz']} Hz)")
@@ -201,12 +199,11 @@ def display_detailed_analysis(diagnosis_result):
         if fft_analysis["count"] > 0:
             high_confidence = [f for f in fft_analysis["findings"] if f["confidence"] == "HIGH"]
             medium_confidence = [f for f in fft_analysis["findings"] if f["confidence"] == "MEDIUM"]
-            low_confidence = [f for f in fft_analysis["findings"] if f["confidence"] == "LOW"]
             
             if high_confidence:
                 st.error("🔴 **HIGH CONFIDENCE FINDINGS** (Requires immediate attention)")
                 for idx, finding in enumerate(high_confidence, 1):
-                    with st.expander(f"⚠️ Peak #{idx}: {finding['component']} - {finding['direction']}"):
+                    with st.expander(f"⚠️ Peak #{idx}: {finding['component']} {finding['location']} - {finding['direction']}"):
                         col1, col2, col3 = st.columns(3)
                         
                         with col1:
@@ -224,7 +221,7 @@ def display_detailed_analysis(diagnosis_result):
             if medium_confidence:
                 st.warning("🟠 **MEDIUM CONFIDENCE FINDINGS** (Monitor closely)")
                 for idx, finding in enumerate(medium_confidence, len(high_confidence) + 1):
-                    with st.expander(f"⚠️ Peak #{idx}: {finding['component']} - {finding['direction']}"):
+                    with st.expander(f"⚠️ Peak #{idx}: {finding['component']} {finding['location']} - {finding['direction']}"):
                         col1, col2, col3 = st.columns(3)
                         
                         with col1:
@@ -238,58 +235,141 @@ def display_detailed_analysis(diagnosis_result):
                         with col3:
                             st.markdown(f"**Fault:** {finding['fault']}")
                             st.warning("⚠️ MEDIUM CONFIDENCE - Monitor closely")
+    
+    # Tab 6: FFT Pump
+    with tabs[5]:
+        fft_analysis = analyses.get("fft_pump", {})
+        
+        if not fft_analysis.get("available", False):
+            st.info("ℹ️ FFT spectrum data not available or not entered")
+            return
+        
+        st.markdown(f"**RPM Actual:** {fft_analysis['rpm_actual']} RPM ({fft_analysis['rpm_hz']} Hz)")
+        st.markdown(f"**Peak Findings:** {fft_analysis['count']} significant peaks detected")
+        st.caption(f"**Standard:** {fft_analysis.get('standard', 'ISO 13373-3 §6.2.2')}")
+        
+        if fft_analysis["count"] > 0:
+            high_confidence = [f for f in fft_analysis["findings"] if f["confidence"] == "HIGH"]
+            medium_confidence = [f for f in fft_analysis["findings"] if f["confidence"] == "MEDIUM"]
             
-            if low_confidence:
-                with st.expander(f"⚪ LOW CONFIDENCE FINDINGS ({len(low_confidence)} peaks)", expanded=False):
-                    for idx, finding in enumerate(low_confidence, len(high_confidence) + len(medium_confidence) + 1):
-                        st.markdown(f"**Peak #{idx}:** {finding['frequency_hz']} Hz ({finding['ratio_to_rpm']}x RPM) - {finding['fault']}")
-        else:
-            st.success("✅ No significant peaks detected in FFT spectrum")
+            if high_confidence:
+                st.error("🔴 **HIGH CONFIDENCE FINDINGS** (Requires immediate attention)")
+                for idx, finding in enumerate(high_confidence, 1):
+                    with st.expander(f"⚠️ Peak #{idx}: {finding['component']} {finding['location']} - {finding['direction']}"):
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            st.metric("Frequency", f"{finding['frequency_hz']} Hz")
+                            st.metric("Ratio to RPM", f"{finding['ratio_to_rpm']}x")
+                        
+                        with col2:
+                            st.metric("Amplitude", f"{finding['amplitude_mms']} mm/s")
+                            st.metric("Confidence", finding["confidence"])
+                        
+                        with col3:
+                            st.markdown(f"**Fault:** {finding['fault']}")
+                            st.error("⚠️ HIGH CONFIDENCE - Requires attention")
+            
+            if medium_confidence:
+                st.warning("🟠 **MEDIUM CONFIDENCE FINDINGS** (Monitor closely)")
+                for idx, finding in enumerate(medium_confidence, len(high_confidence) + 1):
+                    with st.expander(f"⚠️ Peak #{idx}: {finding['component']} {finding['location']} - {finding['direction']}"):
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            st.metric("Frequency", f"{finding['frequency_hz']} Hz")
+                            st.metric("Ratio to RPM", f"{finding['ratio_to_rpm']}x")
+                        
+                        with col2:
+                            st.metric("Amplitude", f"{finding['amplitude_mms']} mm/s")
+                            st.metric("Confidence", finding["confidence"])
+                        
+                        with col3:
+                            st.markdown(f"**Fault:** {finding['fault']}")
+                            st.warning("⚠️ MEDIUM CONFIDENCE - Monitor closely")
+
+
+def display_power_off_test_guidance(primary_issue, electrical_report):
+    """
+    Tampilkan Power-Off Test Guidance jika diperlukan untuk validasi mechanical vs electrical unbalance
+    """
+    # Cek apakah perlu power-off test validation
+    requires_validation = False
+    
+    if primary_issue == "MECHANICAL":
+        voltage_imbalance = electrical_report.get("voltage", {}).get("imbalance_pct", 0)
+        current_imbalance = electrical_report.get("current", {}).get("imbalance_pct", 0)
+        load_pct = electrical_report.get("load", {}).get("percentage", 100)
+        slip_pct = electrical_report.get("slip", {}).get("slip_pct", 0)
+        
+        electrical_ok = (
+            voltage_imbalance <= 2 and
+            current_imbalance <= 5 and
+            load_pct <= 110 and
+            slip_pct <= 5 and
+            slip_pct >= -2
+        )
+        
+        if electrical_ok:
+            requires_validation = True
+    
+    if requires_validation:
+        st.markdown("### 🔌 Power-Off Test Validation Required")
+        st.warning("""
+        ⚠️ **API 610 Annex L.3.2: Root Cause Validation Required**  
+        Vibration symptoms indicate mechanical issue, but electrical parameters are normal.  
+        **Do not perform mechanical repair (balancing/alignment) before validating root cause** with power-off test.
+        """)
+        
+        with st.expander("🔧 Power-Off Test Procedure (Step-by-Step)", expanded=True):
+            st.markdown("""
+            **Objective**: Differentiate mechanical unbalance (impeller erosion) vs electrical unbalance (rotor winding issue)
+            
+            **Procedure**:
+            1. **Baseline Measurement**  
+               - Measure vibration (mm/s RMS) while motor running at normal load
+               - Record values for H/V/A directions at DE & NDE
+            
+            2. **Controlled Shutdown**  
+               - Shut down motor safely following terminal procedures
+               - Start timer immediately after shutdown command
+            
+            3. **Coast-Down Monitoring** (critical phase - 2-3 minutes)  
+               - Measure vibration every 15 seconds during coast-down
+               - Pay special attention to first 60 seconds (rapid RPM decay)
+            
+            4. **Interpretation**:
+               | Observation | Root Cause | Required Action |
+               |-------------|------------|-----------------|
+               | Vibration decays **GRADUALLY** with RPM<br>(e.g., 5.0 → 3.0 → 1.5 mm/s as RPM drops) | ✅ **MECHANICAL UNBALANCE**<br>(Impeller erosion/fouling) | Proceed with dynamic balancing |
+               | Vibration drops **IMMEDIATELY** to <1.0 mm/s<br>(within 5-10 seconds of shutdown) | ⚡ **ELECTRICAL UNBALANCE**<br>(Rotor winding issue) | **DO NOT BALANCE** - Schedule electrical inspection |
+               | Vibration **PERSISTS** after shutdown<br>(>1.5 mm/s when RPM < 100) | 🔧 **BEARING DEFECT/LOOSENESS** | Inspect bearings & foundation bolts |
+            
+            5. **Documentation**  
+               - Record coast-down vibration profile (time vs vibration)
+               - Attach to work order for repair authorization
+            
+            **Safety Note**:  
+            ⚠️ Only perform on non-critical pumps with approved shutdown procedure.  
+            ⚠️ Never perform on pumps serving firewater or critical process streams without management approval.
+            """)
+            
+            st.caption("""
+            **Standard Reference**:  
+            • API 610 12th Ed. Annex L.3.2: "Vibration is a symptom, not a root cause. Always validate root cause before mechanical intervention."  
+            • ISO 13373-1:2012 §5.3.2: "Electrical faults may manifest as vibration symptoms indistinguishable from mechanical faults without power-off validation."
+            """)
 
 
 def display_action_plan(action_plan, diagnosis_result=None):
-    """Display action plan dengan timeline & power-off test validation"""
+    """Display action plan dengan timeline & mandatory re-measure flag"""
     st.markdown("### 📋 Recommended Action Plan")
     
-    # Power-off test validation logic (inline - no separate function)
-    if diagnosis_result is not None:
+    # Tampilkan Power-Off Test Guidance jika diperlukan
+    if diagnosis_result:
         primary_issue = action_plan.get("primary_issue", "NORMAL")
         electrical_report = diagnosis_result["analyses"].get("electrical", {})
-        
-        voltage_imbalance = electrical_report.get("voltage", {}).get("imbalance_pct", 100.0)
-        current_imbalance = electrical_report.get("current", {}).get("imbalance_pct", 100.0)
-        load_pct = electrical_report.get("load", {}).get("percentage", 0.0)
-        slip_pct = electrical_report.get("slip", {}).get("slip_pct", 100.0)
-        
-        electrical_ok = (
-            voltage_imbalance <= 2.0 and
-            current_imbalance <= 5.0 and
-            load_pct <= 110.0 and
-            slip_pct >= -2.0 and
-            slip_pct <= 5.0
-        )
-        
-        if primary_issue == "MECHANICAL" and electrical_ok:
-            st.markdown("### 🔌 Power-Off Test Validation Required")
-            st.warning("""
-            ⚠️ **API 610 Annex L.3.2: Root Cause Validation Required**  
-            Vibration symptoms indicate mechanical issue, but electrical parameters are normal.  
-            **Do not perform mechanical repair (balancing/alignment) before validating root cause** with power-off test.
-            """)
-            
-            with st.expander("🔧 Power-Off Test Procedure (Step-by-Step)", expanded=True):
-                st.markdown("""
-                **Procedure**:
-                1. **Baseline**: Measure vibration while motor running
-                2. **Shutdown**: Shut down motor safely
-                3. **Coast-Down**: Measure vibration during 2-3 min coast-down
-                4. **Interpret**:
-                   - Gradual decay with RPM → **MECHANICAL unbalance** → proceed with balancing
-                   - Immediate drop to <1.0 mm/s → **ELECTRICAL unbalance** → DO NOT BALANCE
-                   - Persists after shutdown → **bearing defect/looseness**
-                
-                **Safety**: Only perform on non-critical pumps with approved procedure.
-                """)
+        display_power_off_test_guidance(primary_issue, electrical_report)
     
     actions = action_plan["actions"]
     
@@ -336,7 +416,7 @@ def display_action_plan(action_plan, diagnosis_result=None):
 
 
 def generate_excel_report(diagnosis_result):
-    """Generate Excel report - Compliance Statement TETAP ADA di sini untuk audit"""
+    """Generate Excel report dengan compliance statement"""
     
     data = {
         "Category": [],
@@ -349,9 +429,6 @@ def generate_excel_report(diagnosis_result):
     
     analyses = diagnosis_result["analyses"]
     action_plan = diagnosis_result["action_plan"]
-    
-    # ... [SEMUA KODE EXCEL REPORT SAMA SEPERTI SEBELUMNYA - TIDAK DIUBAH] ...
-    # Hydraulic, Electrical, Mechanical, Thermal, FFT, Action Plan sections
     
     # Hydraulic
     hydraulic = analyses["hydraulic"]
@@ -409,15 +486,15 @@ def generate_excel_report(diagnosis_result):
     # Mechanical
     mechanical = analyses["mechanical"]
     data["Category"].extend(["Mechanical", "Mechanical", "Mechanical"])
-    data["Parameter"].extend(["Driver Vibration", "Driven Vibration", "Demodulation Max"])
+    data["Parameter"].extend(["Motor Vibration", "Pump Vibration", "Demodulation Max"])
     data["Value"].extend([
-        f"{mechanical['driver']['averages']['Overall_Max']:.2f} mm/s (Zone {mechanical['driver']['overall_zone']})",
-        f"{mechanical['driven']['averages']['Overall_Max']:.2f} mm/s (Zone {mechanical['driven']['overall_zone']})",
+        f"{mechanical['motor']['averages']['Overall_Max']:.2f} mm/s (Zone {mechanical['motor']['overall_zone']})",
+        f"{mechanical['pump']['averages']['Overall_Max']:.2f} mm/s (Zone {mechanical['pump']['overall_zone']})",
         f"{mechanical['demod_max']:.2f} g"
     ])
     data["Status"].extend([
-        "OK" if mechanical['driver']['overall_zone'] in ["A", "B"] else "ISSUE",
-        "OK" if mechanical['driven']['overall_zone'] in ["A", "B"] else "ISSUE",
+        "OK" if mechanical['motor']['overall_zone'] in ["A", "B"] else "ISSUE",
+        "OK" if mechanical['pump']['overall_zone'] in ["A", "B"] else "ISSUE",
         "OK" if mechanical['bearing_defect_risk'] == "LOW" else "ISSUE"
     ])
     data["Recommendation"].extend(mechanical['recommendations'][:3] if len(mechanical['recommendations']) >= 3 else mechanical['recommendations'] + [""] * (3 - len(mechanical['recommendations'])))
@@ -430,14 +507,14 @@ def generate_excel_report(diagnosis_result):
     # Thermal
     thermal = analyses["thermal"]
     data["Category"].extend(["Thermal", "Thermal"])
-    data["Parameter"].extend(["Bearing DE Temp", "Bearing NDE Temp"])
+    data["Parameter"].extend(["Max Bearing Temp", "Max Temp Rise"])
     data["Value"].extend([
-        f"{thermal['de']['temperature']:.1f}°C",
-        f"{thermal['nde']['temperature']:.1f}°C"
+        f"{thermal['max_temperature']:.1f}°C",
+        f"{thermal['max_rise']:.1f}°C"
     ])
     data["Status"].extend([
-        thermal['de']['status'],
-        thermal['nde']['status']
+        thermal['overall_status'],
+        thermal['overall_status']
     ])
     data["Recommendation"].extend(thermal['recommendations'][:2] if len(thermal['recommendations']) >= 2 else thermal['recommendations'] + [""] * (2 - len(thermal['recommendations'])))
     data["Standard"].extend([
@@ -445,19 +522,37 @@ def generate_excel_report(diagnosis_result):
         "API 610 §11.3"
     ])
     
-    # FFT Analysis
-    fft_analysis = analyses.get("fft", {})
-    if fft_analysis.get("available", False) and fft_analysis.get("count", 0) > 0:
-        data["Category"].append("FFT Spectrum")
+    # FFT Analysis Motor
+    fft_motor = analyses.get("fft_motor", {})
+    if fft_motor.get("available", False) and fft_motor.get("count", 0) > 0:
+        data["Category"].append("FFT Spectrum Motor")
         data["Parameter"].append("Significant Peaks")
-        data["Value"].append(f"{fft_analysis['count']} peaks detected")
+        data["Value"].append(f"{fft_motor['count']} peaks detected")
         data["Status"].append("ANALYSIS_COMPLETE")
-        data["Recommendation"].append(f"RPM: {fft_analysis['rpm_actual']} RPM")
-        data["Standard"].append(fft_analysis.get('standard', 'ISO 13373-3 §6.2.2'))
+        data["Recommendation"].append(f"RPM: {fft_motor['rpm_actual']} RPM")
+        data["Standard"].append(fft_motor.get('standard', 'ISO 13373-3 §6.2.2'))
         
-        for finding in fft_analysis["findings"]:
-            data["Category"].append("FFT Peak")
-            data["Parameter"].append(f"{finding['component']} {finding['direction']}")
+        for finding in fft_motor["findings"]:
+            data["Category"].append("FFT Peak Motor")
+            data["Parameter"].append(f"{finding['location']} {finding['direction']}")
+            data["Value"].append(f"{finding['frequency_hz']} Hz ({finding['ratio_to_rpm']}x RPM)")
+            data["Status"].append(finding["confidence"])
+            data["Recommendation"].append(finding["fault"])
+            data["Standard"].append("ISO 13373-3 §6.2.2")
+    
+    # FFT Analysis Pump
+    fft_pump = analyses.get("fft_pump", {})
+    if fft_pump.get("available", False) and fft_pump.get("count", 0) > 0:
+        data["Category"].append("FFT Spectrum Pump")
+        data["Parameter"].append("Significant Peaks")
+        data["Value"].append(f"{fft_pump['count']} peaks detected")
+        data["Status"].append("ANALYSIS_COMPLETE")
+        data["Recommendation"].append(f"RPM: {fft_pump['rpm_actual']} RPM")
+        data["Standard"].append(fft_pump.get('standard', 'ISO 13373-3 §6.2.2'))
+        
+        for finding in fft_pump["findings"]:
+            data["Category"].append("FFT Peak Pump")
+            data["Parameter"].append(f"{finding['location']} {finding['direction']}")
             data["Value"].append(f"{finding['frequency_hz']} Hz ({finding['ratio_to_rpm']}x RPM)")
             data["Status"].append(finding["confidence"])
             data["Recommendation"].append(finding["fault"])
@@ -472,7 +567,7 @@ def generate_excel_report(diagnosis_result):
         data["Recommendation"].append(action.get("pic", ""))
         data["Standard"].append(action.get("standard", ""))
     
-    # === COMPLIANCE STATEMENT TETAP ADA DI EXCEL REPORT (UNTUK AUDIT) ===
+    # Compliance Statement (ISO 55001 §8.2)
     data["Category"].append("Compliance")
     data["Parameter"].append("Standards Compliance")
     data["Value"].append("100% Compliant")
