@@ -1,4 +1,4 @@
-"""Modul untuk analisis data hidraulis (NPSHa, BEP, HF cavitation detection)"""
+"""Analisis hidraulis sesuai API 610 12th Ed. §6.3.3 & Annex L"""
 from utils.calculations import (
     calculate_npsha,
     calculate_differential_head,
@@ -13,9 +13,10 @@ def analyze_hydraulic_conditions(
     flow_rate,
     product_type,
     pump_size,
-    temperature=None,
-    hf_5_16khz_driver=0.0,
-    hf_5_16khz_driven=0.0
+    hf_5_16khz_motor_de=0.0,
+    hf_5_16khz_motor_nde=0.0,
+    hf_5_16khz_pump_de=0.0,
+    hf_5_16khz_pump_nde=0.0
 ):
     """
     Analisis kondisi hidraulis pompa + HF-based cavitation detection
@@ -28,15 +29,20 @@ def analyze_hydraulic_conditions(
     bep_flow = PUMP_SIZE_DEFAULTS[pump_size]["bep_flow_m3h"]
     
     # Hitung NPSHa
-    npsha = calculate_npsha(suction_pressure, product_type, temperature)
+    npsha = calculate_npsha(suction_pressure, product_type)
     head = calculate_differential_head(discharge_pressure, suction_pressure, product_type)
     flow_ratio, flow_status = calculate_flow_ratio(flow_rate, pump_size)
     
     # === KRUSIAL: HF-BASED CAVITATION DETECTION (API 610 §6.3.3) ===
-    hf_max = max(hf_5_16khz_driver, hf_5_16khz_driven)
+    hf_max = max(
+        hf_5_16khz_motor_de,
+        hf_5_16khz_motor_nde,
+        hf_5_16khz_pump_de,
+        hf_5_16khz_pump_nde
+    )
     
     # Threshold berbasis produk (API 682 §5.4.2: stricter for volatile hydrocarbons)
-    cavitation_threshold = 0.3 if product_type in ["Gasoline", "Avtur", "Naphtha"] else 0.5
+    cavitation_threshold = PRODUCT_PROPERTIES[product_type]["hf_cavitation_threshold"]
     
     hf_cavitation_risk = "HIGH" if hf_max > cavitation_threshold else "LOW"
     hf_cavitation_status = (
@@ -90,6 +96,10 @@ def analyze_hydraulic_conditions(
         "hf_cavitation_risk": hf_cavitation_risk,
         "hf_cavitation_status": hf_cavitation_status,
         "hf_max": round(hf_max, 2),
+        "hf_motor_de": round(hf_5_16khz_motor_de, 2),
+        "hf_motor_nde": round(hf_5_16khz_motor_nde, 2),
+        "hf_pump_de": round(hf_5_16khz_pump_de, 2),
+        "hf_pump_nde": round(hf_5_16khz_pump_nde, 2),
         "head": head,
         "flow_rate": flow_rate,
         "bep_flow": bep_flow,
@@ -101,7 +111,7 @@ def analyze_hydraulic_conditions(
     }
 
 
-def generate_hydraulic_report(operational_data, spec_data, hf_5_16khz_driver=0.0, hf_5_16khz_driven=0.0):
+def generate_hydraulic_report(operational_data, spec_data, hf_data):
     """Generate laporan analisis hidraulis"""
     suction = operational_data.get("suction_pressure", 0.0)
     discharge = operational_data.get("discharge_pressure", 0.0)
@@ -116,8 +126,10 @@ def generate_hydraulic_report(operational_data, spec_data, hf_5_16khz_driver=0.0
         flow_rate=flow,
         product_type=product,
         pump_size=pump_size,
-        hf_5_16khz_driver=hf_5_16khz_driver,
-        hf_5_16khz_driven=hf_5_16khz_driven
+        hf_5_16khz_motor_de=hf_data.get("motor_de", 0.0),
+        hf_5_16khz_motor_nde=hf_data.get("motor_nde", 0.0),
+        hf_5_16khz_pump_de=hf_data.get("pump_de", 0.0),
+        hf_5_16khz_pump_nde=hf_data.get("pump_nde", 0.0)
     )
     
     return analysis
