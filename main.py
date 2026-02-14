@@ -102,7 +102,7 @@ def main():
         
         # Tab 3: Action Plan
         with result_tabs[2]:
-            display_action_plan(diagnosis_result["action_plan"])
+            display_action_plan(diagnosis_result["action_plan"], diagnosis_result=diagnosis_result)
         
         # Tab 4: Export Report
         with result_tabs[3]:
