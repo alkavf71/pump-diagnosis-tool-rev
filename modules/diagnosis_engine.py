@@ -2,8 +2,13 @@
 from utils.lookup_tables import DIAGNOSIS_PRIORITY, PRODUCT_PROPERTIES
 
 
-def analyze_fft_peaks(fft_data, rpm_actual, spec_data):
-    """Analisis peak frequency dari FFT spectrum"""
+def analyze_fft_peaks(fft_data, rpm_actual, component="pump"):
+    """
+    Analisis peak frequency dari FFT spectrum sesuai ISO 13373-3 §6.2.2
+    
+    Returns:
+        dict: Hasil analisis FFT
+    """
     if not fft_data or rpm_actual <= 0:
         return {
             "available": False,
@@ -14,18 +19,18 @@ def analyze_fft_peaks(fft_data, rpm_actual, spec_data):
     rpm_hz = rpm_actual / 60.0
     findings = []
     
-    # Analisis untuk Driver
-    driver_fft = fft_data.get("driver", {})
-    for direction in ["H", "V", "A"]:
-        freq_key = f"FFT_Freq_{direction}"
-        amp_key = f"FFT_Amp_{direction}"
+    # Analisis untuk DE Horizontal
+    for i in range(1, 4):
+        freq_key = f"FFT_DE_H_Freq{i}"
+        amp_key = f"FFT_DE_H_Amp{i}"
         
-        peak_freq = driver_fft.get(freq_key, 0.0)
-        peak_amp = driver_fft.get(amp_key, 0.0)
+        peak_freq = fft_data.get(freq_key, 0.0)
+        peak_amp = fft_data.get(amp_key, 0.0)
         
         if peak_freq > 0.5 and peak_amp > 0.5:
             ratio = peak_freq / rpm_hz if rpm_hz > 0 else 0
             
+            # Identifikasi fault berdasarkan ratio terhadap RPM
             if 0.95 <= ratio <= 1.05:
                 fault = "1x RPM - Unbalance (Impeller erosion/fouling)"
                 confidence = "HIGH" if peak_amp > 2.0 else "MEDIUM"
@@ -38,7 +43,7 @@ def analyze_fft_peaks(fft_data, rpm_actual, spec_data):
             elif 0.55 <= ratio <= 0.65:
                 fault = "BPFI - Inner Race Bearing Defect"
                 confidence = "MEDIUM"
-            elif 6.0 <= ratio <= 8.0:
+            elif 6.0 <= ratio <= 8.0:  # Typical vane pass untuk pompa centrifugal (5-7 vanes)
                 fault = "Vane Pass Frequency - Hydraulic Instability"
                 confidence = "MEDIUM"
             else:
@@ -46,8 +51,9 @@ def analyze_fft_peaks(fft_data, rpm_actual, spec_data):
                 confidence = "LOW"
             
             findings.append({
-                "component": "Driver (Motor)",
-                "direction": direction,
+                "component": component,
+                "location": "DE",
+                "direction": "H",
                 "frequency_hz": round(peak_freq, 1),
                 "amplitude_mms": round(peak_amp, 2),
                 "ratio_to_rpm": round(ratio, 2),
@@ -55,14 +61,13 @@ def analyze_fft_peaks(fft_data, rpm_actual, spec_data):
                 "confidence": confidence
             })
     
-    # Analisis untuk Driven
-    driven_fft = fft_data.get("driven", {})
-    for direction in ["H", "V", "A"]:
-        freq_key = f"FFT_Freq_{direction}"
-        amp_key = f"FFT_Amp_{direction}"
+    # Analisis untuk DE Axial
+    for i in range(1, 4):
+        freq_key = f"FFT_DE_A_Freq{i}"
+        amp_key = f"FFT_DE_A_Amp{i}"
         
-        peak_freq = driven_fft.get(freq_key, 0.0)
-        peak_amp = driven_fft.get(amp_key, 0.0)
+        peak_freq = fft_data.get(freq_key, 0.0)
+        peak_amp = fft_data.get(amp_key, 0.0)
         
         if peak_freq > 0.5 and peak_amp > 0.5:
             ratio = peak_freq / rpm_hz if rpm_hz > 0 else 0
@@ -87,8 +92,9 @@ def analyze_fft_peaks(fft_data, rpm_actual, spec_data):
                 confidence = "LOW"
             
             findings.append({
-                "component": "Driven (Pump)",
-                "direction": direction,
+                "component": component,
+                "location": "DE",
+                "direction": "A",
                 "frequency_hz": round(peak_freq, 1),
                 "amplitude_mms": round(peak_amp, 2),
                 "ratio_to_rpm": round(ratio, 2),
@@ -109,7 +115,8 @@ def analyze_fft_peaks(fft_data, rpm_actual, spec_data):
 
 def requires_power_off_test(primary_type, electrical_report):
     """
-    Determine if power-off test validation is required
+    Determine if power-off test validation is required to differentiate 
+    mechanical vs electrical unbalance (API 610 Annex L.3.2).
     """
     if primary_type != "MECHANICAL":
         return False
@@ -130,7 +137,7 @@ def requires_power_off_test(primary_type, electrical_report):
     return electrical_ok
 
 
-def prioritize_diagnosis(hydraulic_report, electrical_report, mechanical_report, thermal_report, fft_analysis=None):
+def prioritize_diagnosis(hydraulic_report, electrical_report, mechanical_report, thermal_report, fft_motor=None, fft_pump=None):
     """
     Prioritaskan diagnosa berdasarkan causal hierarchy
     
@@ -154,11 +161,18 @@ def prioritize_diagnosis(hydraulic_report, electrical_report, mechanical_report,
             "standard": electrical_report.get("standard", "IEC 60034-1 §4.2")
         }
     
-    if fft_analysis and fft_analysis.get("has_issue", False):
-        issues["MECHANICAL_FFT"] = {
-            "report": fft_analysis,
+    if fft_motor and fft_motor.get("has_issue", False):
+        issues["MECHANICAL_FFT_MOTOR"] = {
+            "report": fft_motor,
             "priority": DIAGNOSIS_PRIORITY.index("MECHANICAL"),
-            "standard": fft_analysis.get("standard", "ISO 13373-3 §6.2.2")
+            "standard": fft_motor.get("standard", "ISO 13373-3 §6.2.2")
+        }
+    
+    if fft_pump and fft_pump.get("has_issue", False):
+        issues["MECHANICAL_FFT_PUMP"] = {
+            "report": fft_pump,
+            "priority": DIAGNOSIS_PRIORITY.index("MECHANICAL"),
+            "standard": fft_pump.get("standard", "ISO 13373-3 §6.2.2")
         }
     
     if mechanical_report.get("has_issue", False):
@@ -182,6 +196,7 @@ def prioritize_diagnosis(hydraulic_report, electrical_report, mechanical_report,
         primary_report = primary_data["report"]
         primary_standard = primary_data["standard"]
         
+        # Secondary note berdasarkan causal hierarchy
         secondary_note = None
         
         if primary_type == "HYDRAULIC":
@@ -202,7 +217,8 @@ def prioritize_diagnosis(hydraulic_report, electrical_report, mechanical_report,
                     "Fix electrical issue first, then re-measure vibration."
                 )
         
-        if primary_type == "MECHANICAL_FFT":
+        # Normalisasi primary_type
+        if primary_type.startswith("MECHANICAL_FFT"):
             primary_type = "MECHANICAL"
         
         primary_diagnosis = {
@@ -252,13 +268,10 @@ def generate_action_plan(diagnosis_result, spec_data, metadata):
     installation_year = spec_data.get("installation_year", 2018)
     pump_tag = metadata.get("pump_tag", "Unknown")
     
-    product_risk_factor = {
-        "Gasoline": 5,
-        "Avtur": 4,
-        "Naphtha": 5,
-        "Diesel": 3
-    }.get(product_type, 3)
+    # Product risk factor (API 682 §5.4.2)
+    product_risk_factor = PRODUCT_PROPERTIES[product_type]["risk_factor"]
     
+    # Age risk adjustment (ISO 55001 §8.2)
     age_risk_factor = calculate_age_risk_factor(installation_year)
     
     if primary_type == "NORMAL":
@@ -395,19 +408,10 @@ def generate_action_plan(diagnosis_result, spec_data, metadata):
                 "action": "⚠️ POWER-OFF TEST REQUIRED: Differentiate electrical vs mechanical unbalance",
                 "timeline": "Before mechanical repair",
                 "pic": "Vibration Analyst",
-                "standard": "API 610 Annex L.3.2",
-                "validation_procedure": (
-                    "1. Measure vibration while motor running\n"
-                    "2. Shut down motor safely\n"
-                    "3. Measure vibration during coast-down (2-3 min)\n"
-                    "4. Interpret:\n"
-                    "   • Gradual decay with RPM → MECHANICAL unbalance\n"
-                    "   • Immediate drop to <1.0 mm/s → ELECTRICAL unbalance\n"
-                    "   • Persists after shutdown → bearing defect/looseness"
-                )
+                "standard": "API 610 Annex L.3.2"
             })
         
-        if "findings" in report:
+        if "findings" in report and report["findings"]:
             base_risk = product_risk_factor * 3
             risk_score = min(int(base_risk * age_risk_factor), 100)
             risk_level = "HIGH"
@@ -461,6 +465,7 @@ def generate_action_plan(diagnosis_result, spec_data, metadata):
                 base_risk = product_risk_factor * 2
                 risk_score = min(int(base_risk * age_risk_factor), 100)
                 risk_level = "MEDIUM"
+                actions = []
     
     elif primary_type == "THERMAL":
         report = primary["report"]
@@ -544,7 +549,7 @@ def generate_action_plan(diagnosis_result, spec_data, metadata):
 
 
 def run_complete_diagnosis(input_data):
-    """Jalankan diagnosa lengkap - causal hierarchy intact"""
+    """Jalankan diagnosa lengkap dari input data - 100% causal hierarchy compliant"""
     from modules.hydraulic_analysis import generate_hydraulic_report
     from modules.electrical_analysis import generate_electrical_report
     from modules.thermal_analysis import generate_thermal_report
@@ -554,20 +559,22 @@ def run_complete_diagnosis(input_data):
     operational_data = input_data["operational"]
     electrical_data = input_data["electrical"]
     thermal_data = input_data["thermal"]
-    vibration_data = input_data["vibration"]
+    vibration_motor = input_data["vibration"]["motor"]
+    vibration_pump = input_data["vibration"]["pump"]
     metadata = input_data["metadata"]
     
+    # Ambil data tambahan
     actual_rpm = input_data.get("rpm", None)
-    fft_data = input_data.get("fft", {})
+    hf_data = input_data.get("hf_band", {})
+    demod_data = input_data.get("demodulation", {})
+    fft_motor = input_data.get("fft_motor", {})
+    fft_pump = input_data.get("fft_pump", {})
     
-    hf_driver = vibration_data["driver"].get("HF_5_16kHz", 0.0)
-    hf_driven = vibration_data["driven"].get("HF_5_16kHz", 0.0)
-    
+    # Analisis paralel semua komponen
     hydraulic_report = generate_hydraulic_report(
         operational_data,
         spec_data,
-        hf_5_16khz_driver=hf_driver,
-        hf_5_16khz_driven=hf_driven
+        hf_data
     )
     
     electrical_report = generate_electrical_report(
@@ -579,24 +586,33 @@ def run_complete_diagnosis(input_data):
     thermal_report = generate_thermal_report(thermal_data)
     
     mechanical_report = analyze_mechanical_conditions(
-        vibration_data["driver"],
-        vibration_data["driven"],
+        vibration_motor,
+        vibration_pump,
         spec_data["foundation_type"],
         spec_data["product_type"]
     )
     
-    fft_analysis = analyze_fft_peaks(
-        fft_data=fft_data,
+    # FFT analysis (jika tersedia)
+    fft_motor_analysis = analyze_fft_peaks(
+        fft_motor,
         rpm_actual=actual_rpm if actual_rpm else 2950,
-        spec_data=spec_data
+        component="motor"
     )
     
+    fft_pump_analysis = analyze_fft_peaks(
+        fft_pump,
+        rpm_actual=actual_rpm if actual_rpm else 2950,
+        component="pump"
+    )
+    
+    # === CAUSAL HIERARCHY: Hydraulic → Electrical → Mechanical → Thermal ===
     diagnosis_result = prioritize_diagnosis(
         hydraulic_report,
         electrical_report,
         mechanical_report,
         thermal_report,
-        fft_analysis=fft_analysis
+        fft_motor=fft_motor_analysis,
+        fft_pump=fft_pump_analysis
     )
     
     action_plan = generate_action_plan(diagnosis_result, spec_data, metadata)
@@ -609,7 +625,8 @@ def run_complete_diagnosis(input_data):
             "electrical": electrical_report,
             "thermal": thermal_report,
             "mechanical": mechanical_report,
-            "fft": fft_analysis
+            "fft_motor": fft_motor_analysis,
+            "fft_pump": fft_pump_analysis
         },
         "diagnosis": diagnosis_result,
         "action_plan": action_plan,
@@ -618,7 +635,7 @@ def run_complete_diagnosis(input_data):
 
 
 def generate_summary(diagnosis_result, action_plan):
-    """Generate executive summary - Compliance statement tetap di Excel, BUKAN di dashboard"""
+    """Generate executive summary dengan compliance statement"""
     primary = diagnosis_result["primary_diagnosis"]
     primary_type = primary["type"]
     
@@ -636,7 +653,7 @@ def generate_summary(diagnosis_result, action_plan):
         if diagnosis_result.get("requires_power_off_test", False):
             power_off_note = "<br>⚠️ <span style='color:orange'>POWER-OFF TEST REQUIRED before mechanical repair</span>"
         
-        if "findings" in primary['report']:
+        if "findings" in primary['report'] and primary['report']["findings"]:
             summary_text = f"🔧 **PRIMARY ISSUE: Mechanical (FFT)** - {len(primary['report']['findings'])} significant peaks detected<br>**Standard:** {primary['standard']}{power_off_note}"
             color = "orange"
         else:
@@ -649,8 +666,6 @@ def generate_summary(diagnosis_result, action_plan):
         summary_text = "❓ **Unknown status**"
         color = "gray"
     
-    # NOTE: Compliance statement string tetap di-generate untuk Excel report
-    # TAPI TIDAK DITAMPILKAN di dashboard (dihapus di report_generator.py)
     return {
         "summary_text": summary_text,
         "color": color,
