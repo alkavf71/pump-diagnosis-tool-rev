@@ -5,7 +5,7 @@ from utils.lookup_tables import PRODUCT_PROPERTIES, FAULT_MAPPING
 
 def render_specification_form():
     """Render form input spesifikasi pompa"""
-    st.subheader("📋 Spesifikasi Pompa (Context Data)")
+    st.subheader("📋 Spesifikasi Pompa")
     
     col1, col2, col3 = st.columns(3)
     
@@ -178,7 +178,7 @@ def render_operational_input():
 
 def render_rpm_input():
     """Render input RPM aktual"""
-    st.subheader("🔄 Actual RPM (IEC 60034-1 §4.2: Slip Calculation)")
+    st.subheader("🔄 Actual RPM")
     
     rpm = st.number_input(
         "Actual RPM (measured)",
@@ -194,7 +194,7 @@ def render_rpm_input():
 
 def render_electrical_input():
     """Render form input listrik (V & A)"""
-    st.subheader("⚡ Data Listrik (IEC 60034-1 §4.2)")
+    st.subheader("⚡ Data Listrik")
     
     col1, col2, col3 = st.columns(3)
     
@@ -227,7 +227,7 @@ def render_electrical_input():
 
 def render_thermal_input():
     """Render form input thermal (optional)"""
-    st.subheader("🌡️ Data Thermal (Optional) - API 610 §11.3")
+    st.subheader("🌡️ Data Thermal")
     
     col1, col2 = st.columns(2)
     
@@ -257,7 +257,7 @@ def render_thermal_input():
 
 def render_fft_input(section_name, key_prefix):
     """Render form input FFT spectrum untuk H/V/A (optional)"""
-    st.subheader(f"📈 FFT Spectrum Analysis - {section_name} (Optional) - ISO 13373-3 §6.2.2")
+    st.subheader(f"📈 FFT Spectrum Analysis - {section_name}")
     st.caption("Input peak frequency dominan dari ADASH FFT display (1-200 Hz)")
     
     directions = ["H", "V", "A"]
