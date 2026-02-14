@@ -1,73 +1,11 @@
-"""Modul untuk analisis data listrik (voltage, current, imbalance, slip)"""
+"""Analisis listrik sesuai IEC 60034-1:2017 §4.2"""
 from utils.calculations import (
     calculate_voltage_imbalance,
     calculate_current_imbalance,
-    calculate_load_percentage
+    calculate_load_percentage,
+    calculate_motor_slip
 )
 from utils.lookup_tables import PUMP_SIZE_DEFAULTS
-
-
-def calculate_motor_slip(rated_rpm, actual_rpm):
-    """
-    Hitung slip motor (%) dan identifikasi issue
-    
-    IEC 60034-1:2017 §4.2:
-    "Slip monitoring is mandatory for overload detection in induction motors. 
-     Normal slip at full load: 1-3%. Slip > 5% indicates overload condition."
-    """
-    if rated_rpm <= 0:
-        return {
-            "slip_pct": 0.0,
-            "slip_rpm": 0.0,
-            "status": "INVALID",
-            "issue": False,
-            "recommendation": "⚠️ Invalid rated RPM - cannot calculate slip",
-            "standard": "IEC 60034-1 §4.2"
-        }
-    
-    slip_rpm = rated_rpm - actual_rpm
-    slip_pct = (slip_rpm / rated_rpm) * 100
-    
-    # Threshold berdasarkan IEC 60034-1 §4.2
-    if slip_pct > 5.0:
-        status = "HIGH_SLIP"
-        issue = True
-        recommendation = (
-            f"⚠️ HIGH SLIP ({slip_pct:.1f}%) - Possible hydraulic overload or electrical issue. "
-            f"Check pump head, cavitation, or voltage supply (IEC 60034-1 §4.2)."
-        )
-    elif slip_pct > 3.0:
-        status = "ELEVATED_SLIP"
-        issue = True
-        recommendation = (
-            f"⚠️ Elevated slip ({slip_pct:.1f}%) - Monitor for overload conditions. "
-            f"Verify pump operating point vs BEP."
-        )
-    elif slip_pct < 0:
-        # Actual RPM > Rated RPM (tidak mungkin kecuali generator/misreading)
-        status = "ABNORMAL"
-        issue = True
-        recommendation = (
-            f"⚠️ Actual RPM ({actual_rpm}) > Rated RPM ({rated_rpm}) - "
-            f"Verify measurement accuracy or check for backflow (IEC 60034-1 §4.2)."
-        )
-    elif slip_pct < 1.0:
-        status = "LOW_SLIP"
-        issue = False
-        recommendation = f"✅ Motor slip normal - low load condition ({slip_pct:.1f}%)"
-    else:
-        status = "NORMAL"
-        issue = False
-        recommendation = f"✅ Motor slip normal ({slip_pct:.1f}%)"
-    
-    return {
-        "slip_pct": round(slip_pct, 2),
-        "slip_rpm": round(slip_rpm, 1),
-        "status": status,
-        "issue": issue,
-        "recommendation": recommendation,
-        "standard": "IEC 60034-1 §4.2"
-    }
 
 
 def analyze_electrical_conditions(
