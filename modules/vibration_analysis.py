@@ -1,120 +1,94 @@
-"""Modul untuk analisis data vibrasi"""
+"""Analisis vibrasi sesuai ISO 10816-3:2022"""
 from utils.lookup_tables import ISO_10816_3_LIMITS, FAULT_MAPPING
-from utils.calculations import get_zone_classification, get_zone_description
 
 
-def calculate_average_vibration(vibration_data):
-    """Hitung average per arah: Avr = (DE + NDE) / 2"""
-    directions = ["H", "V", "A"]
-    averages = {}
+def get_iso_zone(vibration_value, foundation_type):
+    """
+    Tentukan zona ISO 10816-3 berdasarkan nilai vibrasi
     
-    for direction in directions:
-        de_key = f"DE_{direction}"
-        nde_key = f"NDE_{direction}"
-        
-        de_value = vibration_data.get(de_key, 0.0)
-        nde_value = vibration_data.get(nde_key, 0.0)
-        
-        avg_value = (de_value + nde_value) / 2
-        averages[f"Avr_{direction}"] = round(avg_value, 2)
+    Returns:
+        str: "A", "B", "C", atau "D"
+    """
+    foundation_type = foundation_type.lower()
+    limits = ISO_10816_3_LIMITS.get(foundation_type, ISO_10816_3_LIMITS["rigid"])
     
-    averages["Overall_Max"] = max(averages.values())
-    
-    return averages
-
-
-def classify_vibration_zones(averages, foundation_type="rigid"):
-    """Klasifikasikan zona ISO 10816-3 per arah"""
-    zones = {}
-    directions = ["H", "V", "A"]
-    
-    for direction in directions:
-        avg_key = f"Avr_{direction}"
-        avg_value = averages.get(avg_key, 0.0)
-        
-        zone = get_zone_classification(avg_value, foundation_type)
-        zone_desc = get_zone_description(zone)
-        
-        zones[f"Zone_{direction}"] = {
-            "zone": zone,
-            "name": zone_desc["name"],
-            "color": zone_desc["color"],
-            "recommendation": zone_desc["recommendation"]
-        }
-    
-    return zones
-
-
-def identify_fault_indicators(averages):
-    """Identifikasi kemungkinan fault berdasarkan arah dominan"""
-    directions = ["H", "V", "A"]
-    faults = {}
-    
-    max_direction = max(directions, key=lambda d: averages.get(f"Avr_{d}", 0))
-    primary_fault = FAULT_MAPPING[max_direction]
-    
-    faults["primary_fault"] = primary_fault
-    faults["primary_direction"] = max_direction
-    
-    for direction in directions:
-        avg_key = f"Avr_{direction}"
-        avg_value = averages.get(avg_key, 0.0)
-        
-        fault_type = FAULT_MAPPING[direction]
-        faults[f"fault_{direction}"] = {
-            "type": fault_type,
-            "confidence": "HIGH" if avg_value > 4.5 else "MEDIUM" if avg_value > 2.8 else "LOW"
-        }
-    
-    return faults
-
-
-def analyze_hf_vibration(vibration_data, product_type):
-    """Analisis high-frequency vibration untuk cavitation & bearing defect"""
-    hf_value = vibration_data.get("HF_5_16kHz", 0.0)
-    demod_value = vibration_data.get("Demodulation", 0.0)
-    
-    if product_type in ["Gasoline", "Avtur", "Naphtha"]:
-        cavitation_threshold = 0.3
+    if vibration_value <= limits["zone_a_max"]:
+        return "A"
+    elif vibration_value <= limits["zone_b_max"]:
+        return "B"
+    elif vibration_value <= limits["zone_c_max"]:
+        return "C"
     else:
-        cavitation_threshold = 0.5
-    
-    analysis = {
-        "hf_value": hf_value,
-        "demod_value": demod_value,
-        "cavitation_risk": "HIGH" if hf_value > cavitation_threshold else "LOW",
-        "bearing_defect_risk": "HIGH" if demod_value > 0.5 else "LOW",
-        "recommendation": ""
-    }
-    
-    if hf_value > cavitation_threshold:
-        analysis["recommendation"] = "⚠️ High-frequency vibration indicates cavitation risk. Verify NPSHa."
-    elif demod_value > 0.5:
-        analysis["recommendation"] = "⚠️ Demodulation signal indicates early bearing defect."
-    else:
-        analysis["recommendation"] = "✅ HF vibration within normal range."
-    
-    return analysis
+        return "D"
 
 
-def generate_vibration_report(vibration_data, foundation_type="rigid", product_type="Diesel"):
-    """Generate laporan lengkap analisis vibrasi"""
-    averages = calculate_average_vibration(vibration_data)
-    zones = classify_vibration_zones(averages, foundation_type)
-    faults = identify_fault_indicators(averages)
-    hf_analysis = analyze_hf_vibration(vibration_data, product_type)
+def calculate_directional_averages(vibration_data):
+    """
+    Hitung rata-rata per arah (H/V/A) dari DE + NDE
     
-    overall_zone = max(
-        [zones[f"Zone_{d}"]["zone"] for d in ["H", "V", "A"]],
-        key=lambda z: ["A", "B", "C", "D"].index(z)
-    )
+    Returns:
+        dict: {"H": avg, "V": avg, "A": avg, "Overall_Max": max_value}
+    """
+    avg_h = (vibration_data.get("DE_H", 0.0) + vibration_data.get("NDE_H", 0.0)) / 2
+    avg_v = (vibration_data.get("DE_V", 0.0) + vibration_data.get("NDE_V", 0.0)) / 2
+    avg_a = (vibration_data.get("DE_A", 0.0) + vibration_data.get("NDE_A", 0.0)) / 2
+    
+    overall_max = max(avg_h, avg_v, avg_a)
     
     return {
-        "averages": averages,
-        "zones": zones,
-        "faults": faults,
-        "hf_analysis": hf_analysis,
-        "overall_zone": overall_zone,
-        "severity": get_zone_description(overall_zone)["name"],
-        "recommendation": get_zone_description(overall_zone)["recommendation"]
+        "Avr_H": round(avg_h, 2),
+        "Avr_V": round(avg_v, 2),
+        "Avr_A": round(avg_a, 2),
+        "Overall_Max": round(overall_max, 2)
     }
+
+
+def analyze_fault_patterns(fft_peaks, rpm_actual):
+    """
+    Analisis pola harmonik untuk identifikasi fault (ISO 13373-3 Table 2)
+    
+    Returns:
+        dict: Primary fault dan confidence
+    """
+    if rpm_actual <= 0 or not fft_peaks:
+        return {"primary_fault": "Unknown", "confidence": "LOW"}
+    
+    rpm_hz = rpm_actual / 60.0
+    harmonics = {}
+    
+    # Ekstrak harmonik dari semua peak
+    for peak in fft_peaks:
+        if peak["frequency_hz"] > 0.5 and peak["amplitude_mms"] > 0.5:
+            ratio = peak["frequency_hz"] / rpm_hz
+            order = round(ratio)
+            
+            if 0.95 <= ratio <= 4.05:  # Harmonik 1x-4x RPM
+                if order not in harmonics:
+                    harmonics[order] = []
+                harmonics[order].append({
+                    "freq": peak["frequency_hz"],
+                    "amp": peak["amplitude_mms"],
+                    "ratio": ratio,
+                    "dir": peak.get("direction", "H")
+                })
+    
+    # Deteksi fault berdasarkan pola harmonik
+    has_1x = 1 in harmonics and max(p["amp"] for p in harmonics[1]) > 1.0
+    has_2x = 2 in harmonics and max(p["amp"] for p in harmonics[2]) > 1.5
+    has_3x = 3 in harmonics and max(p["amp"] for p in harmonics[3]) > 0.7
+    
+    # Analisis directional dominance
+    axial_2x = any(p["dir"] == "A" and abs(p["ratio"] - 2.0) < 0.05 for h in harmonics.get(2, []) for p in [h])
+    horiz_1x = any(p["dir"] == "H" and abs(p["ratio"] - 1.0) < 0.05 for h in harmonics.get(1, []) for p in [h])
+    
+    # Decision logic
+    if has_3x and (has_1x or has_2x):
+        return {"primary_fault": "Mechanical Looseness", "confidence": "HIGH"}
+    elif axial_2x and has_2x:
+        return {"primary_fault": "Misalignment", "confidence": "HIGH"}
+    elif horiz_1x and has_1x and not has_2x:
+        return {"primary_fault": "Unbalance", "confidence": "HIGH"}
+    elif has_1x and has_2x:
+        return {"primary_fault": "Unbalance with Misalignment", "confidence": "MEDIUM"}
+    else:
+        return {"primary_fault": "Unknown", "confidence": "LOW"}
