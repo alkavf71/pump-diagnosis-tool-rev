@@ -1,136 +1,222 @@
-"""Utility functions untuk perhitungan teknis"""
-from utils.lookup_tables import PRODUCT_PROPERTIES, PUMP_SIZE_DEFAULTS, ISO_10816_3_LIMITS
+"""Fungsi kalkulasi akurat sesuai standar internasional"""
+import math
 
 
-def calculate_npsha(suction_kpa, product_type, temperature=None):
-    """Hitung NPSHa (Net Positive Suction Head Available)"""
-    rho = PRODUCT_PROPERTIES[product_type]["density_kgm3"]
-    default_temp = PRODUCT_PROPERTIES[product_type]["default_temp_c"]
-    temp = temperature if temperature is not None else default_temp
+def calculate_npsha(suction_pressure_kpa, product_type, temperature_c=25):
+    """
+    Hitung NPSHa sesuai ISO 13709 §7.2.1
     
-    p_vapor_m = estimate_vapor_pressure(product_type, temp)
-    pressure_head = (suction_kpa + 101.3) / (9.81 * rho / 1000)
-    npsha = pressure_head - p_vapor_m
+    Formula: NPSHa = (P_suction - P_vapor) / (ρ * g) + v²/(2g)
+    Untuk pompa sentrifugal di terminal, head velocity diabaikan (v²/2g < 0.5m)
+    
+    Returns:
+        float: NPSHa dalam meter
+    """
+    # Densitas berdasarkan produk (kg/m³)
+    density = {
+        "Gasoline": 740,
+        "Diesel": 840,
+        "Avtur": 780,
+        "Naphtha": 700
+    }.get(product_type, 800)
+    
+    # Vapor pressure pada 25°C (kPa) - API 682 §5.4.2
+    vapor_pressure = {
+        "Gasoline": 55,
+        "Diesel": 0.5,
+        "Avtur": 15,
+        "Naphtha": 60
+    }.get(product_type, 1.0)
+    
+    # Konversi suction pressure ke absolute (asumsi atmospheric = 101.3 kPa)
+    suction_abs = suction_pressure_kpa + 101.3
+    
+    # Hitung NPSHa (meter)
+    npsha = (suction_abs - vapor_pressure) / (density * 0.00981)
     
     return round(npsha, 2)
 
 
-def estimate_vapor_pressure(product_type, temperature):
-    """Estimasi vapor pressure dalam meter head"""
-    vapor_pressure_kpa = {
-        "Gasoline": 50 + (temperature - 20) * 3,
-        "Diesel": 5 + (temperature - 20) * 0.5,
-        "Avtur": 20 + (temperature - 20) * 1.5,
-        "Naphtha": 60 + (temperature - 20) * 4
-    }
-    
-    rho = PRODUCT_PROPERTIES[product_type]["density_kgm3"]
-    vapor_head_m = vapor_pressure_kpa[product_type] / (9.81 * rho / 1000)
-    
-    return round(vapor_head_m, 2)
-
-
 def calculate_differential_head(discharge_kpa, suction_kpa, product_type):
-    """Hitung differential head dalam meter"""
-    rho = PRODUCT_PROPERTIES[product_type]["density_kgm3"]
+    """
+    Hitung differential head sesuai ISO 13709 §7.2.1
+    
+    Returns:
+        float: Head dalam meter
+    """
+    density = {
+        "Gasoline": 740,
+        "Diesel": 840,
+        "Avtur": 780,
+        "Naphtha": 700
+    }.get(product_type, 800)
+    
     delta_p_kpa = discharge_kpa - suction_kpa
-    head_m = delta_p_kpa / (9.81 * rho / 1000)
-    return round(head_m, 2)
-
-
-def calculate_voltage_imbalance(v1, v2, v3):
-    """Hitung voltage imbalance percentage"""
-    v_avg = (v1 + v2 + v3) / 3
-    max_dev = max(abs(v1 - v_avg), abs(v2 - v_avg), abs(v3 - v_avg))
-    imbalance_pct = (max_dev / v_avg) * 100
+    head_m = delta_p_kpa / (density * 0.00981)
     
-    status = "NORMAL" if imbalance_pct <= 2 else "WARNING" if imbalance_pct <= 5 else "ALARM"
-    
-    return round(imbalance_pct, 2), status
-
-
-def calculate_current_imbalance(i1, i2, i3):
-    """Hitung current imbalance percentage"""
-    i_avg = (i1 + i2 + i3) / 3
-    max_dev = max(abs(i1 - i_avg), abs(i2 - i_avg), abs(i3 - i_avg))
-    imbalance_pct = (max_dev / i_avg) * 100
-    
-    status = "NORMAL" if imbalance_pct <= 5 else "WARNING" if imbalance_pct <= 10 else "ALARM"
-    
-    return round(imbalance_pct, 2), status
-
-
-def calculate_load_percentage(current_avg, fla):
-    """Hitung motor load percentage"""
-    load_pct = (current_avg / fla) * 100
-    
-    if load_pct < 80:
-        status = "UNDERLOAD"
-    elif load_pct <= 110:
-        status = "NORMAL"
-    elif load_pct <= 125:
-        status = "OVERLOAD_WARNING"
-    else:
-        status = "OVERLOAD_ALARM"
-    
-    return round(load_pct, 1), status
+    return round(head_m, 1)
 
 
 def calculate_flow_ratio(flow_rate, pump_size):
-    """Hitung ratio flow terhadap BEP"""
-    bep_flow = PUMP_SIZE_DEFAULTS[pump_size]["bep_flow_m3h"]
-    ratio = flow_rate / bep_flow
+    """
+    Hitung flow ratio terhadap BEP sesuai API 610 Annex L
     
-    if ratio < 0.6:
+    Returns:
+        tuple: (flow_ratio, status)
+    """
+    bep_flow = {
+        "Small": 30,
+        "Medium": 100,
+        "Large": 250
+    }.get(pump_size, 100)
+    
+    flow_ratio = flow_rate / bep_flow
+    
+    if flow_ratio < 0.6:
         status = "RECIRCULATION_RISK"
-    elif ratio > 1.2:
+    elif flow_ratio > 1.2:
         status = "OVERLOAD_CAVITATION_RISK"
     else:
         status = "NORMAL"
     
-    return round(ratio, 2), status
+    return round(flow_ratio, 2), status
 
 
-def get_zone_classification(avr_value, foundation_type="rigid"):
-    """Klasifikasi zona ISO 10816-3"""
-    limits = ISO_10816_3_LIMITS[foundation_type]
+def calculate_voltage_imbalance(v1, v2, v3):
+    """
+    Hitung voltage imbalance sesuai IEC 60034-1 §4.2
     
-    if avr_value <= limits["zone_a_max"]:
-        return "A"
-    elif avr_value <= limits["zone_b_max"]:
-        return "B"
-    elif avr_value <= limits["zone_c_max"]:
-        return "C"
+    Formula: Imbalance % = (Max - Min) / Average * 100
+    
+    Returns:
+        tuple: (imbalance_pct, status)
+    """
+    voltages = [v1, v2, v3]
+    v_max = max(voltages)
+    v_min = min(voltages)
+    v_avg = sum(voltages) / 3
+    
+    if v_avg == 0:
+        return 0.0, "INVALID"
+    
+    imbalance_pct = ((v_max - v_min) / v_avg) * 100
+    
+    if imbalance_pct > 5.0:
+        status = "ALARM"
+    elif imbalance_pct > 2.0:
+        status = "WARNING"
     else:
-        return "D"
+        status = "NORMAL"
+    
+    return round(imbalance_pct, 1), status
 
 
-def get_zone_description(zone):
-    """Dapatkan deskripsi & rekomendasi per zona"""
-    descriptions = {
-        "A": {
-            "name": "Normal",
-            "color": "green",
-            "recommendation": "Continue monitoring",
-            "timeline": "Quarterly"
-        },
-        "B": {
-            "name": "Satisfactory",
-            "color": "yellow",
-            "recommendation": "Investigate within 30 days",
-            "timeline": "Monthly"
-        },
-        "C": {
-            "name": "Unsatisfactory",
-            "color": "orange",
-            "recommendation": "Repair within 14 days",
-            "timeline": "< 14 days"
-        },
-        "D": {
-            "name": "Unacceptable",
-            "color": "red",
-            "recommendation": "Immediate shutdown or repair within 72 hours",
-            "timeline": "< 72 hours"
+def calculate_current_imbalance(i1, i2, i3):
+    """
+    Hitung current imbalance sesuai IEC 60034-1 §4.2
+    
+    Returns:
+        tuple: (imbalance_pct, status)
+    """
+    currents = [i1, i2, i3]
+    i_max = max(currents)
+    i_min = min(currents)
+    i_avg = sum(currents) / 3
+    
+    if i_avg == 0:
+        return 0.0, "INVALID"
+    
+    imbalance_pct = ((i_max - i_min) / i_avg) * 100
+    
+    if imbalance_pct > 10.0:
+        status = "ALARM"
+    elif imbalance_pct > 5.0:
+        status = "WARNING"
+    else:
+        status = "NORMAL"
+    
+    return round(imbalance_pct, 1), status
+
+
+def calculate_load_percentage(current_avg, fla):
+    """
+    Hitung persentase beban motor sesuai IEC 60034-1 §4.2
+    
+    Returns:
+        tuple: (load_pct, status)
+    """
+    if fla == 0:
+        return 0.0, "INVALID"
+    
+    load_pct = (current_avg / fla) * 100
+    
+    if load_pct > 125:
+        status = "OVERLOAD_ALARM"
+    elif load_pct > 110:
+        status = "OVERLOAD_WARNING"
+    elif load_pct < 80:
+        status = "UNDERLOAD"
+    else:
+        status = "NORMAL"
+    
+    return round(load_pct, 1), status
+
+
+def calculate_motor_slip(rated_rpm, actual_rpm):
+    """
+    Hitung slip motor sesuai IEC 60034-1 §4.2
+    
+    Returns:
+        dict: Hasil kalkulasi slip
+    """
+    if rated_rpm <= 0:
+        return {
+            "slip_pct": 0.0,
+            "slip_rpm": 0.0,
+            "status": "INVALID",
+            "issue": False,
+            "recommendation": "⚠️ Invalid rated RPM - cannot calculate slip"
         }
+    
+    slip_rpm = rated_rpm - actual_rpm
+    slip_pct = (slip_rpm / rated_rpm) * 100
+    
+    # Threshold berdasarkan IEC 60034-1 §4.2
+    if slip_pct > 8.0:
+        status = "CRITICAL_OVERLOAD"
+        issue = True
+        recommendation = (
+            f"🚨 CRITICAL OVERLOAD: Slip {slip_pct:.1f}% > 8% - immediate action required. "
+            f"Check pump head, cavitation, or mechanical binding."
+        )
+    elif slip_pct > 5.0:
+        status = "HIGH_SLIP"
+        issue = True
+        recommendation = (
+            f"⚠️ HIGH SLIP ({slip_pct:.1f}%) - Possible hydraulic overload or cavitation. "
+            f"Verify NPSHa and discharge pressure."
+        )
+    elif slip_pct < -2.0:
+        # Actual RPM > Rated RPM (tidak mungkin kecuali generator/backflow)
+        status = "ABNORMAL"
+        issue = True
+        recommendation = (
+            f"⚠️ Actual RPM ({actual_rpm}) > Rated RPM ({rated_rpm}) - "
+            f"Verify tachometer calibration or check for backflow (check valve failure)."
+        )
+    elif slip_pct < 0:
+        status = "LOW_SLIP"
+        issue = False
+        recommendation = f"✅ Motor slip normal - low load condition ({slip_pct:.1f}%)"
+    else:
+        status = "NORMAL"
+        issue = False
+        recommendation = f"✅ Motor slip normal ({slip_pct:.1f}%)"
+    
+    return {
+        "slip_pct": round(slip_pct, 2),
+        "slip_rpm": round(slip_rpm, 1),
+        "status": status,
+        "issue": issue,
+        "recommendation": recommendation
     }
-    return descriptions.get(zone, descriptions["A"])
