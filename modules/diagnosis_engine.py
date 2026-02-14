@@ -109,27 +109,16 @@ def analyze_fft_peaks(fft_data, rpm_actual, spec_data):
 
 def requires_power_off_test(primary_type, electrical_report):
     """
-    Determine if power-off test validation is required to differentiate 
-    mechanical vs electrical unbalance (API 610 Annex L.3.2).
-    
-    Returns True if:
-    - Primary diagnosis is MECHANICAL
-    - Electrical parameters are within normal limits:
-        * Voltage imbalance <= 2%
-        * Current imbalance <= 5%
-        * Motor load <= 110% FLA
-        * Slip between -2% and 5% (normal operating range)
+    Determine if power-off test validation is required
     """
     if primary_type != "MECHANICAL":
         return False
     
-    # Extract electrical parameters with safe defaults
     voltage_imbalance = electrical_report.get("voltage", {}).get("imbalance_pct", 100.0)
     current_imbalance = electrical_report.get("current", {}).get("imbalance_pct", 100.0)
     load_pct = electrical_report.get("load", {}).get("percentage", 0.0)
     slip_pct = electrical_report.get("slip", {}).get("slip_pct", 100.0)
     
-    # Check if all parameters are within normal limits
     electrical_ok = (
         voltage_imbalance <= 2.0 and
         current_imbalance <= 5.0 and
@@ -148,10 +137,6 @@ def prioritize_diagnosis(hydraulic_report, electrical_report, mechanical_report,
     API 610 12th Ed. Annex L.3.2:
     "Cavitation generates vibration that may be misinterpreted as mechanical defect. 
      Verify NPSHa and high-frequency vibration BEFORE mechanical intervention."
-    
-    ISO 13373-1:2012 §5.3.2:
-    "Vibration is a symptom, not a root cause. Always identify the physical mechanism 
-     generating the vibration before prescribing corrective action."
     """
     issues = {}
     
@@ -197,7 +182,6 @@ def prioritize_diagnosis(hydraulic_report, electrical_report, mechanical_report,
         primary_report = primary_data["report"]
         primary_standard = primary_data["standard"]
         
-        # Secondary note berdasarkan causal hierarchy
         secondary_note = None
         
         if primary_type == "HYDRAULIC":
@@ -206,7 +190,6 @@ def prioritize_diagnosis(hydraulic_report, electrical_report, mechanical_report,
                 "Fix hydraulic issue first, then re-measure vibration before mechanical intervention."
             )
         elif primary_type == "ELECTRICAL" and mechanical_report.get("has_issue", False):
-            # Cek apakah electrical issue terkait RPM abnormal
             if electrical_report.get("slip", {}).get("status") == "ABNORMAL":
                 secondary_note = (
                     "⚠️ IEC 60034-1 §4.2: Mechanical vibration symptoms may be secondary to RPM abnormality. "
@@ -219,7 +202,6 @@ def prioritize_diagnosis(hydraulic_report, electrical_report, mechanical_report,
                     "Fix electrical issue first, then re-measure vibration."
                 )
         
-        # Normalisasi primary_type
         if primary_type == "MECHANICAL_FFT":
             primary_type = "MECHANICAL"
         
@@ -230,7 +212,6 @@ def prioritize_diagnosis(hydraulic_report, electrical_report, mechanical_report,
             "standard": primary_standard
         }
         
-        # === BARU: Tambahkan flag untuk power-off test validation ===
         requires_validation = requires_power_off_test(primary_type, electrical_report)
     else:
         primary_diagnosis = {
@@ -243,7 +224,7 @@ def prioritize_diagnosis(hydraulic_report, electrical_report, mechanical_report,
     
     return {
         "primary_diagnosis": primary_diagnosis,
-        "requires_power_off_test": requires_validation,  # ← FLAG BARU UNTUK VALIDASI
+        "requires_power_off_test": requires_validation,
         "all_issues": sorted_issues,
         "issue_count": len(sorted_issues),
         "has_issues": len(sorted_issues) > 0
@@ -251,20 +232,14 @@ def prioritize_diagnosis(hydraulic_report, electrical_report, mechanical_report,
 
 
 def calculate_age_risk_factor(installation_year, current_year=2026):
-    """
-    Hitung age-based risk factor (ISO 55001:2014 §8.2)
-    
-    ISO 55001:2014 §8.2:
-    "Asset age shall be considered in risk assessment. Assets >10 years require 
-     increased monitoring frequency and proactive maintenance planning."
-    """
+    """Hitung age-based risk factor (ISO 55001:2014 §8.2)"""
     age = current_year - installation_year
     if age > 15:
-        return 1.5  # +50% risk untuk pompa >15 tahun
+        return 1.5
     elif age > 10:
-        return 1.2  # +20% risk untuk pompa 10-15 tahun
+        return 1.2
     else:
-        return 1.0  # Risk normal untuk pompa <10 tahun
+        return 1.0
 
 
 def generate_action_plan(diagnosis_result, spec_data, metadata):
@@ -277,7 +252,6 @@ def generate_action_plan(diagnosis_result, spec_data, metadata):
     installation_year = spec_data.get("installation_year", 2018)
     pump_tag = metadata.get("pump_tag", "Unknown")
     
-    # Product risk factor (API 682 §5.4.2)
     product_risk_factor = {
         "Gasoline": 5,
         "Avtur": 4,
@@ -285,7 +259,6 @@ def generate_action_plan(diagnosis_result, spec_data, metadata):
         "Diesel": 3
     }.get(product_type, 3)
     
-    # Age risk adjustment (ISO 55001 §8.2)
     age_risk_factor = calculate_age_risk_factor(installation_year)
     
     if primary_type == "NORMAL":
@@ -415,7 +388,6 @@ def generate_action_plan(diagnosis_result, spec_data, metadata):
     elif primary_type == "MECHANICAL":
         report = primary["report"]
         
-        # === BARU: Tambahkan power-off test sebagai action item pertama jika diperlukan ===
         actions = []
         if diagnosis_result.get("requires_power_off_test", False):
             actions.append({
@@ -436,7 +408,6 @@ def generate_action_plan(diagnosis_result, spec_data, metadata):
             })
         
         if "findings" in report:
-            # FFT diagnosis
             base_risk = product_risk_factor * 3
             risk_score = min(int(base_risk * age_risk_factor), 100)
             risk_level = "HIGH"
@@ -451,7 +422,6 @@ def generate_action_plan(diagnosis_result, spec_data, metadata):
                         "standard": "ISO 13373-3 §6.2.2"
                     })
         else:
-            # Mechanical diagnosis berbasis vibrasi overall
             if report["overall_zone"] == "D":
                 base_risk = product_risk_factor * 4
                 risk_score = min(int(base_risk * age_risk_factor), 100)
@@ -491,7 +461,6 @@ def generate_action_plan(diagnosis_result, spec_data, metadata):
                 base_risk = product_risk_factor * 2
                 risk_score = min(int(base_risk * age_risk_factor), 100)
                 risk_level = "MEDIUM"
-                # actions remains empty (only power-off test if applicable)
     
     elif primary_type == "THERMAL":
         report = primary["report"]
@@ -544,7 +513,7 @@ def generate_action_plan(diagnosis_result, spec_data, metadata):
         risk_level = "UNKNOWN"
         actions = []
     
-    if risk_score > 0 and not actions:  # Jika tidak ada actions khusus tapi risk >0
+    if risk_score > 0 and not actions:
         actions = [{
             "priority": "ROUTINE",
             "action": "Update asset register & schedule follow-up inspection",
@@ -553,7 +522,6 @@ def generate_action_plan(diagnosis_result, spec_data, metadata):
             "standard": "ISO 55001 §8.2"
         }]
     elif risk_score > 0:
-        # Tambahkan routine action di akhir jika belum ada
         if actions[-1].get("priority") != "ROUTINE":
             actions.append({
                 "priority": "ROUTINE",
@@ -576,7 +544,7 @@ def generate_action_plan(diagnosis_result, spec_data, metadata):
 
 
 def run_complete_diagnosis(input_data):
-    """Jalankan diagnosa lengkap dari input data - 100% causal hierarchy compliant"""
+    """Jalankan diagnosa lengkap - causal hierarchy intact"""
     from modules.hydraulic_analysis import generate_hydraulic_report
     from modules.electrical_analysis import generate_electrical_report
     from modules.thermal_analysis import generate_thermal_report
@@ -589,26 +557,23 @@ def run_complete_diagnosis(input_data):
     vibration_data = input_data["vibration"]
     metadata = input_data["metadata"]
     
-    # Ambil data tambahan
     actual_rpm = input_data.get("rpm", None)
     fft_data = input_data.get("fft", {})
     
-    # === KRUSIAL: Ambil HF band dari vibration data ===
     hf_driver = vibration_data["driver"].get("HF_5_16kHz", 0.0)
     hf_driven = vibration_data["driven"].get("HF_5_16kHz", 0.0)
     
-    # Analisis paralel semua komponen
     hydraulic_report = generate_hydraulic_report(
         operational_data,
         spec_data,
-        hf_5_16khz_driver=hf_driver,   # ← INTEGRASI HF KE HYDRAULIC
+        hf_5_16khz_driver=hf_driver,
         hf_5_16khz_driven=hf_driven
     )
     
     electrical_report = generate_electrical_report(
         electrical_data,
         spec_data,
-        actual_rpm=actual_rpm           # ← INTEGRASI RPM KE ELECTRICAL
+        actual_rpm=actual_rpm
     )
     
     thermal_report = generate_thermal_report(thermal_data)
@@ -620,14 +585,12 @@ def run_complete_diagnosis(input_data):
         spec_data["product_type"]
     )
     
-    # FFT analysis (jika tersedia)
     fft_analysis = analyze_fft_peaks(
         fft_data=fft_data,
         rpm_actual=actual_rpm if actual_rpm else 2950,
         spec_data=spec_data
     )
     
-    # === CAUSAL HIERARCHY: Hydraulic → Electrical → Mechanical → Thermal ===
     diagnosis_result = prioritize_diagnosis(
         hydraulic_report,
         electrical_report,
@@ -655,7 +618,7 @@ def run_complete_diagnosis(input_data):
 
 
 def generate_summary(diagnosis_result, action_plan):
-    """Generate executive summary dengan compliance statement"""
+    """Generate executive summary - Compliance statement tetap di Excel, BUKAN di dashboard"""
     primary = diagnosis_result["primary_diagnosis"]
     primary_type = primary["type"]
     
@@ -669,7 +632,6 @@ def generate_summary(diagnosis_result, action_plan):
         summary_text = f"⚡ **PRIMARY ISSUE: Electrical** - {primary['report']['overall_status']} condition detected<br>**Standard:** {primary['standard']}"
         color = "red" if primary['report']['overall_status'] == 'CRITICAL' else "orange"
     elif primary_type == "MECHANICAL":
-        # === BARU: Tambahkan indikasi jika power-off test diperlukan ===
         power_off_note = ""
         if diagnosis_result.get("requires_power_off_test", False):
             power_off_note = "<br>⚠️ <span style='color:orange'>POWER-OFF TEST REQUIRED before mechanical repair</span>"
@@ -687,11 +649,21 @@ def generate_summary(diagnosis_result, action_plan):
         summary_text = "❓ **Unknown status**"
         color = "gray"
     
+    # NOTE: Compliance statement string tetap di-generate untuk Excel report
+    # TAPI TIDAK DITAMPILKAN di dashboard (dihapus di report_generator.py)
     return {
         "summary_text": summary_text,
         "color": color,
         "risk_level": action_plan["risk_level"],
         "risk_score": action_plan["risk_score"],
         "action_count": len(action_plan["actions"]),
+        "compliance_statement": (
+            "This diagnosis complies with:<br>"
+            "• API 610 12th Ed. §6.3.3 (Cavitation detection via HF vibration)<br>"
+            "• API 610 Annex L.3.2 (Causal hierarchy: hydraulic before mechanical)<br>"
+            "• ISO 13373-1:2012 §5.3.2 (Vibration as symptom, not root cause)<br>"
+            "• IEC 60034-1:2017 §4.2 (Slip monitoring for overload detection)<br>"
+            "• ISO 15243:2017 §5.2 (Demodulation for bearing defect detection)<br>"
+            "• ISO 55001:2014 §8.2 (Age-based risk adjustment)"
         )
     }
