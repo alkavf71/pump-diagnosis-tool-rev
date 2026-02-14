@@ -1,10 +1,10 @@
-"""Modul untuk generate laporan dengan compliance statement & secondary notes"""
+"""Modul untuk generate laporan - Compliance Statement dihapus dari dashboard (tetap ada di Excel)"""
 import streamlit as st
 import pandas as pd
 
 
 def display_diagnosis_summary(diagnosis_result):
-    """Display summary diagnosis dengan compliance statement"""
+    """Display summary diagnosis - TANPA Compliance Statement di dashboard"""
     summary = diagnosis_result["summary"]
     
     st.markdown(f"### 📊 Executive Summary")
@@ -29,11 +29,12 @@ def display_diagnosis_summary(diagnosis_result):
         unsafe_allow_html=True
     )
     
-    # === FIX KEYERROR: Akses primary_diagnosis dari diagnosis dictionary ===
+    # Tampilkan secondary note jika ada (causal hierarchy warning)
     secondary_note = diagnosis_result["diagnosis"]["primary_diagnosis"].get("secondary_note")
     if secondary_note:
         st.warning(secondary_note)
-    
+    # NOTE: Compliance Statement SUDAH DIHAPUS dari sini - tetap ada di Excel report
+
 
 def display_detailed_analysis(diagnosis_result):
     """Display detailed analysis per component"""
@@ -247,21 +248,19 @@ def display_detailed_analysis(diagnosis_result):
 
 
 def display_action_plan(action_plan, diagnosis_result=None):
-    """Display action plan dengan timeline & mandatory re-measure flag"""
+    """Display action plan dengan timeline & power-off test validation"""
     st.markdown("### 📋 Recommended Action Plan")
     
-    # === POWER-OFF TEST VALIDATION (inline logic - no separate function) ===
+    # Power-off test validation logic (inline - no separate function)
     if diagnosis_result is not None:
         primary_issue = action_plan.get("primary_issue", "NORMAL")
         electrical_report = diagnosis_result["analyses"].get("electrical", {})
         
-        # Ekstrak parameter electrical dengan safe defaults
         voltage_imbalance = electrical_report.get("voltage", {}).get("imbalance_pct", 100.0)
         current_imbalance = electrical_report.get("current", {}).get("imbalance_pct", 100.0)
         load_pct = electrical_report.get("load", {}).get("percentage", 0.0)
         slip_pct = electrical_report.get("slip", {}).get("slip_pct", 100.0)
         
-        # Cek apakah electrical parameters normal
         electrical_ok = (
             voltage_imbalance <= 2.0 and
             current_imbalance <= 5.0 and
@@ -270,7 +269,6 @@ def display_action_plan(action_plan, diagnosis_result=None):
             slip_pct <= 5.0
         )
         
-        # Tampilkan guidance hanya jika mechanical issue + electrical normal
         if primary_issue == "MECHANICAL" and electrical_ok:
             st.markdown("### 🔌 Power-Off Test Validation Required")
             st.warning("""
@@ -281,44 +279,18 @@ def display_action_plan(action_plan, diagnosis_result=None):
             
             with st.expander("🔧 Power-Off Test Procedure (Step-by-Step)", expanded=True):
                 st.markdown("""
-                **Objective**: Differentiate mechanical unbalance (impeller erosion) vs electrical unbalance (rotor winding issue)
-                
                 **Procedure**:
-                1. **Baseline Measurement**  
-                   - Measure vibration (mm/s RMS) while motor running at normal load
-                   - Record values for H/V/A directions at DE & NDE
+                1. **Baseline**: Measure vibration while motor running
+                2. **Shutdown**: Shut down motor safely
+                3. **Coast-Down**: Measure vibration during 2-3 min coast-down
+                4. **Interpret**:
+                   - Gradual decay with RPM → **MECHANICAL unbalance** → proceed with balancing
+                   - Immediate drop to <1.0 mm/s → **ELECTRICAL unbalance** → DO NOT BALANCE
+                   - Persists after shutdown → **bearing defect/looseness**
                 
-                2. **Controlled Shutdown**  
-                   - Shut down motor safely following terminal procedures
-                   - Start timer immediately after shutdown command
-                
-                3. **Coast-Down Monitoring** (critical phase - 2-3 minutes)  
-                   - Measure vibration every 15 seconds during coast-down
-                   - Pay special attention to first 60 seconds (rapid RPM decay)
-                
-                4. **Interpretation**:
-                   | Observation | Root Cause | Required Action |
-                   |-------------|------------|-----------------|
-                   | Vibration decays **GRADUALLY** with RPM<br>(e.g., 5.0 → 3.0 → 1.5 mm/s as RPM drops) | ✅ **MECHANICAL UNBALANCE**<br>(Impeller erosion/fouling) | Proceed with dynamic balancing |
-                   | Vibration drops **IMMEDIATELY** to <1.0 mm/s<br>(within 5-10 seconds of shutdown) | ⚡ **ELECTRICAL UNBALANCE**<br>(Rotor winding issue) | **DO NOT BALANCE** - Schedule electrical inspection |
-                   | Vibration **PERSISTS** after shutdown<br>(>1.5 mm/s when RPM < 100) | 🔧 **BEARING DEFECT/LOOSENESS** | Inspect bearings & foundation bolts |
-                
-                5. **Documentation**  
-                   - Record coast-down vibration profile (time vs vibration)
-                   - Attach to work order for repair authorization
-                
-                **Safety Note**:  
-                ⚠️ Only perform on non-critical pumps with approved shutdown procedure.  
-                ⚠️ Never perform on pumps serving firewater or critical process streams without management approval.
-                """)
-                
-                st.caption("""
-                **Standard Reference**:  
-                • API 610 12th Ed. Annex L.3.2: "Vibration is a symptom, not a root cause. Always validate root cause before mechanical intervention."  
-                • ISO 13373-1:2012 §5.3.2: "Electrical faults may manifest as vibration symptoms indistinguishable from mechanical faults without power-off validation."
+                **Safety**: Only perform on non-critical pumps with approved procedure.
                 """)
     
-    # Tampilkan action items
     actions = action_plan["actions"]
     
     if not actions:
@@ -364,7 +336,7 @@ def display_action_plan(action_plan, diagnosis_result=None):
 
 
 def generate_excel_report(diagnosis_result):
-    """Generate Excel report dengan compliance statement"""
+    """Generate Excel report - Compliance Statement TETAP ADA di sini untuk audit"""
     
     data = {
         "Category": [],
@@ -377,6 +349,9 @@ def generate_excel_report(diagnosis_result):
     
     analyses = diagnosis_result["analyses"]
     action_plan = diagnosis_result["action_plan"]
+    
+    # ... [SEMUA KODE EXCEL REPORT SAMA SEPERTI SEBELUMNYA - TIDAK DIUBAH] ...
+    # Hydraulic, Electrical, Mechanical, Thermal, FFT, Action Plan sections
     
     # Hydraulic
     hydraulic = analyses["hydraulic"]
@@ -497,7 +472,7 @@ def generate_excel_report(diagnosis_result):
         data["Recommendation"].append(action.get("pic", ""))
         data["Standard"].append(action.get("standard", ""))
     
-    # Compliance Statement (ISO 55001 §8.2)
+    # === COMPLIANCE STATEMENT TETAP ADA DI EXCEL REPORT (UNTUK AUDIT) ===
     data["Category"].append("Compliance")
     data["Parameter"].append("Standards Compliance")
     data["Value"].append("100% Compliant")
