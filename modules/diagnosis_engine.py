@@ -693,14 +693,5 @@ def generate_summary(diagnosis_result, action_plan):
         "risk_level": action_plan["risk_level"],
         "risk_score": action_plan["risk_score"],
         "action_count": len(action_plan["actions"]),
-        "compliance_statement": (
-            "This diagnosis complies with:<br>"
-            "• API 610 12th Ed. §6.3.3 (Cavitation detection via HF vibration)<br>"
-            "• API 610 Annex L.3.2 (Causal hierarchy: hydraulic before mechanical)<br>"
-            "• ISO 13373-1:2012 §5.3.2 (Vibration as symptom, not root cause)<br>"
-            "• IEC 60034-1:2017 §4.2 (Slip monitoring for overload detection)<br>"
-            "• ISO 15243:2017 §5.2 (Demodulation for bearing defect detection)<br>"
-            "• ISO 55001:2014 §8.2 (Age-based risk adjustment)<br>"
-            "• <span style='color:orange'>API 610 Annex L.3.2: Power-off test required when electrical parameters normal but vibration elevated</span>"
         )
     }
