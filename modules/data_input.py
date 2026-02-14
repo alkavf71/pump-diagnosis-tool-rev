@@ -1,11 +1,11 @@
-"""Modul untuk form input data inspector - 100% compliant dengan standar"""
+"""Form input data inspector - 64 field sesuai standar"""
 import streamlit as st
 from utils.lookup_tables import PRODUCT_PROPERTIES, FAULT_MAPPING
 
 
 def render_specification_form():
     """Render form input spesifikasi pompa"""
-    st.subheader("📋 Spesifikasi Pompa")
+    st.subheader("📋 Spesifikasi Pompa (Context Data)")
     
     col1, col2, col3 = st.columns(3)
     
@@ -62,9 +62,9 @@ def render_specification_form():
     }
 
 
-def render_vibration_input(section_name, key_prefix):
-    """Render form input vibrasi untuk Driver atau Driven"""
-    st.subheader(f"📊 Vibrasi - {section_name}")
+def render_vibration_input_motor():
+    """Render form input vibrasi untuk Motor (Driver)"""
+    st.subheader("📊 Vibrasi - Motor (Driver)")
     
     directions = ["H", "V", "A"]
     cols = st.columns(3)
@@ -84,7 +84,7 @@ def render_vibration_input(section_name, key_prefix):
                     max_value=50.0,
                     value=0.0,
                     step=0.1,
-                    key=f"{key_prefix}_de_{direction}",
+                    key=f"motor_de_{direction}",
                     help="Drive End vibration (mm/s RMS) - ISO 10816-3"
                 )
             
@@ -95,7 +95,7 @@ def render_vibration_input(section_name, key_prefix):
                     max_value=50.0,
                     value=0.0,
                     step=0.1,
-                    key=f"{key_prefix}_nde_{direction}",
+                    key=f"motor_nde_{direction}",
                     help="Non-Drive End vibration (mm/s RMS) - ISO 10816-3"
                 )
             
@@ -106,35 +106,270 @@ def render_vibration_input(section_name, key_prefix):
         col1, col2 = st.columns(2)
         
         with col1:
-            hf_5_16khz = st.number_input(
-                "HF Band 5-16 kHz (g)",
+            hf_de = st.number_input(
+                "HF Band 5-16 kHz DE (g)",
                 min_value=0.0,
                 max_value=10.0,
                 value=0.0,
                 step=0.1,
-                key=f"{key_prefix}_hf",
-                help="High frequency vibration for cavitation detection (API 610 §6.3.3: independent indicator)"
+                key="motor_hf_de",
+                help="High frequency vibration for cavitation detection (API 610 §6.3.3)"
+            )
+            hf_nde = st.number_input(
+                "HF Band 5-16 kHz NDE (g)",
+                min_value=0.0,
+                max_value=10.0,
+                value=0.0,
+                step=0.1,
+                key="motor_hf_nde",
+                help="High frequency vibration for cavitation detection (API 610 §6.3.3)"
             )
         
         with col2:
-            demod_g = st.number_input(
-                "Demodulation (g)",
+            demod_de = st.number_input(
+                "Demodulation DE (g)",
                 min_value=0.0,
                 max_value=10.0,
                 value=0.0,
                 step=0.1,
-                key=f"{key_prefix}_demod",
-                help="Demodulated signal for early bearing defect (ISO 15243 §5.2: Stage 1 detection)"
+                key="motor_demod_de",
+                help="Demodulated signal for early bearing defect (ISO 15243 §5.2)"
+            )
+            demod_nde = st.number_input(
+                "Demodulation NDE (g)",
+                min_value=0.0,
+                max_value=10.0,
+                value=0.0,
+                step=0.1,
+                key="motor_demod_nde",
+                help="Demodulated signal for early bearing defect (ISO 15243 §5.2)"
             )
         
-        vibration_data["HF_5_16kHz"] = hf_5_16khz
-        vibration_data["Demodulation"] = demod_g
+        vibration_data["HF_DE"] = hf_de
+        vibration_data["HF_NDE"] = hf_nde
+        vibration_data["Demodulation_DE"] = demod_de
+        vibration_data["Demodulation_NDE"] = demod_nde
     
     return vibration_data
 
 
+def render_vibration_input_pump():
+    """Render form input vibrasi untuk Pompa (Driven)"""
+    st.subheader("📊 Vibrasi - Pompa (Driven)")
+    
+    directions = ["H", "V", "A"]
+    cols = st.columns(3)
+    
+    vibration_data = {}
+    
+    for idx, direction in enumerate(directions):
+        with cols[idx]:
+            st.markdown(f"**{direction} ({FAULT_MAPPING[direction]})**")
+            
+            col_de, col_nde = st.columns(2)
+            
+            with col_de:
+                de_value = st.number_input(
+                    f"DE ({direction})",
+                    min_value=0.0,
+                    max_value=50.0,
+                    value=0.0,
+                    step=0.1,
+                    key=f"pump_de_{direction}",
+                    help="Drive End vibration (mm/s RMS) - ISO 10816-3"
+                )
+            
+            with col_nde:
+                nde_value = st.number_input(
+                    f"NDE ({direction})",
+                    min_value=0.0,
+                    max_value=50.0,
+                    value=0.0,
+                    step=0.1,
+                    key=f"pump_nde_{direction}",
+                    help="Non-Drive End vibration (mm/s RMS) - ISO 10816-3"
+                )
+            
+            vibration_data[f"DE_{direction}"] = de_value
+            vibration_data[f"NDE_{direction}"] = nde_value
+    
+    with st.expander("🔍 Advanced Vibration Data (Optional) - API 610 §6.3.3 & ISO 15243 §5.2"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            hf_de = st.number_input(
+                "HF Band 5-16 kHz DE (g)",
+                min_value=0.0,
+                max_value=10.0,
+                value=0.0,
+                step=0.1,
+                key="pump_hf_de",
+                help="High frequency vibration for cavitation detection (API 610 §6.3.3)"
+            )
+            hf_nde = st.number_input(
+                "HF Band 5-16 kHz NDE (g)",
+                min_value=0.0,
+                max_value=10.0,
+                value=0.0,
+                step=0.1,
+                key="pump_hf_nde",
+                help="High frequency vibration for cavitation detection (API 610 §6.3.3)"
+            )
+        
+        with col2:
+            demod_de = st.number_input(
+                "Demodulation DE (g)",
+                min_value=0.0,
+                max_value=10.0,
+                value=0.0,
+                step=0.1,
+                key="pump_demod_de",
+                help="Demodulated signal for early bearing defect (ISO 15243 §5.2)"
+            )
+            demod_nde = st.number_input(
+                "Demodulation NDE (g)",
+                min_value=0.0,
+                max_value=10.0,
+                value=0.0,
+                step=0.1,
+                key="pump_demod_nde",
+                help="Demodulated signal for early bearing defect (ISO 15243 §5.2)"
+            )
+        
+        vibration_data["HF_DE"] = hf_de
+        vibration_data["HF_NDE"] = hf_nde
+        vibration_data["Demodulation_DE"] = demod_de
+        vibration_data["Demodulation_NDE"] = demod_nde
+    
+    return vibration_data
+
+
+def render_fft_input_motor():
+    """Render form input FFT spectrum untuk Motor"""
+    st.subheader("📈 FFT Spectrum Analysis - Motor (Driver) (Optional)")
+    st.caption("Input top 3 peak frequencies from ADASH FFT display (1-200 Hz)")
+    
+    col1, col2 = st.columns(2)
+    
+    fft_data = {}
+    
+    with col1:
+        st.markdown("**📍 Drive End (DE) - Horizontal**")
+        for i in range(1, 4):
+            col_freq, col_amp = st.columns(2)
+            with col_freq:
+                freq = st.number_input(
+                    f"Peak #{i} Frequency (Hz)",
+                    min_value=0.0,
+                    max_value=200.0,
+                    value=0.0,
+                    step=0.1,
+                    key=f"motor_de_h_freq{i}"
+                )
+            with col_amp:
+                amp = st.number_input(
+                    f"Peak #{i} Amplitude (mm/s)",
+                    min_value=0.0,
+                    max_value=50.0,
+                    value=0.0,
+                    step=0.1,
+                    key=f"motor_de_h_amp{i}"
+                )
+            fft_data[f"FFT_DE_H_Freq{i}"] = freq
+            fft_data[f"FFT_DE_H_Amp{i}"] = amp
+    
+    with col2:
+        st.markdown("**📍 Drive End (DE) - Axial**")
+        for i in range(1, 4):
+            col_freq, col_amp = st.columns(2)
+            with col_freq:
+                freq = st.number_input(
+                    f"Peak #{i} Frequency (Hz)",
+                    min_value=0.0,
+                    max_value=200.0,
+                    value=0.0,
+                    step=0.1,
+                    key=f"motor_de_a_freq{i}"
+                )
+            with col_amp:
+                amp = st.number_input(
+                    f"Peak #{i} Amplitude (mm/s)",
+                    min_value=0.0,
+                    max_value=50.0,
+                    value=0.0,
+                    step=0.1,
+                    key=f"motor_de_a_amp{i}"
+                )
+            fft_data[f"FFT_DE_A_Freq{i}"] = freq
+            fft_data[f"FFT_DE_A_Amp{i}"] = amp
+    
+    return fft_data
+
+
+def render_fft_input_pump():
+    """Render form input FFT spectrum untuk Pompa"""
+    st.subheader("📈 FFT Spectrum Analysis - Pompa (Driven) (Optional)")
+    st.caption("Input top 3 peak frequencies from ADASH FFT display (1-200 Hz)")
+    
+    col1, col2 = st.columns(2)
+    
+    fft_data = {}
+    
+    with col1:
+        st.markdown("**📍 Drive End (DE) - Horizontal**")
+        for i in range(1, 4):
+            col_freq, col_amp = st.columns(2)
+            with col_freq:
+                freq = st.number_input(
+                    f"Peak #{i} Frequency (Hz)",
+                    min_value=0.0,
+                    max_value=200.0,
+                    value=0.0,
+                    step=0.1,
+                    key=f"pump_de_h_freq{i}"
+                )
+            with col_amp:
+                amp = st.number_input(
+                    f"Peak #{i} Amplitude (mm/s)",
+                    min_value=0.0,
+                    max_value=50.0,
+                    value=0.0,
+                    step=0.1,
+                    key=f"pump_de_h_amp{i}"
+                )
+            fft_data[f"FFT_DE_H_Freq{i}"] = freq
+            fft_data[f"FFT_DE_H_Amp{i}"] = amp
+    
+    with col2:
+        st.markdown("**📍 Drive End (DE) - Axial**")
+        for i in range(1, 4):
+            col_freq, col_amp = st.columns(2)
+            with col_freq:
+                freq = st.number_input(
+                    f"Peak #{i} Frequency (Hz)",
+                    min_value=0.0,
+                    max_value=200.0,
+                    value=0.0,
+                    step=0.1,
+                    key=f"pump_de_a_freq{i}"
+                )
+            with col_amp:
+                amp = st.number_input(
+                    f"Peak #{i} Amplitude (mm/s)",
+                    min_value=0.0,
+                    max_value=50.0,
+                    value=0.0,
+                    step=0.1,
+                    key=f"pump_de_a_amp{i}"
+                )
+            fft_data[f"FFT_DE_A_Freq{i}"] = freq
+            fft_data[f"FFT_DE_A_Amp{i}"] = amp
+    
+    return fft_data
+
+
 def render_operational_input():
-    """Render form input operasional (pressure, flow, dll)"""
+    """Render form input operasional"""
     st.subheader("⚙️ Data Operasional")
     
     col1, col2, col3 = st.columns(3)
@@ -178,7 +413,7 @@ def render_operational_input():
 
 def render_rpm_input():
     """Render input RPM aktual"""
-    st.subheader("🔄 Actual RPM")
+    st.subheader("🔄 Actual RPM (IEC 60034-1 §4.2: Slip Calculation)")
     
     rpm = st.number_input(
         "Actual RPM (measured)",
@@ -193,8 +428,8 @@ def render_rpm_input():
 
 
 def render_electrical_input():
-    """Render form input listrik (V & A)"""
-    st.subheader("⚡ Data Listrik")
+    """Render form input listrik"""
+    st.subheader("⚡ Data Listrik (IEC 60034-1 §4.2)")
     
     col1, col2, col3 = st.columns(3)
     
@@ -226,73 +461,65 @@ def render_electrical_input():
 
 
 def render_thermal_input():
-    """Render form input thermal (optional)"""
-    st.subheader("🌡️ Data Thermal")
+    """Render form input thermal"""
+    st.subheader("🌡️ Data Thermal (API 610 §11.3)")
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
-        temp_de = st.number_input(
-            "Bearing Temp DE (°C)",
+        temp_motor_de = st.number_input(
+            "Motor DE (°C)",
             min_value=0,
             max_value=150,
             value=65,
-            help="Suhu bearing Drive End (API 610 §11.3: seizure warning >85°C)"
+            help="Suhu bearing Drive End motor (API 610 §11.3: seizure warning >85°C)"
         )
     
     with col2:
-        temp_nde = st.number_input(
-            "Bearing Temp NDE (°C)",
+        temp_motor_nde = st.number_input(
+            "Motor NDE (°C)",
             min_value=0,
             max_value=150,
-            value=65,
-            help="Suhu bearing Non-Drive End (API 610 §11.3: seizure warning >85°C)"
+            value=63,
+            help="Suhu bearing Non-Drive End motor (API 610 §11.3: seizure warning >85°C)"
+        )
+    
+    with col3:
+        temp_pump_de = st.number_input(
+            "Pump DE (°C)",
+            min_value=0,
+            max_value=150,
+            value=68,
+            help="Suhu bearing Drive End pompa (API 610 §11.3: seizure warning >85°C)"
+        )
+    
+    with col4:
+        temp_pump_nde = st.number_input(
+            "Pump NDE (°C)",
+            min_value=0,
+            max_value=150,
+            value=72,
+            help="Suhu bearing Non-Drive End pompa (API 610 §11.3: seizure warning >85°C)"
+        )
+    
+    with col5:
+        temp_ambient = st.number_input(
+            "Ambient (°C)",
+            min_value=0,
+            max_value=50,
+            value=30,
+            help="Suhu lingkungan untuk perhitungan rise above ambient"
         )
     
     return {
-        "temp_de": float(temp_de),
-        "temp_nde": float(temp_nde)
+        "temp_motor_de": float(temp_motor_de),
+        "temp_motor_nde": float(temp_motor_nde),
+        "temp_pump_de": float(temp_pump_de),
+        "temp_pump_nde": float(temp_pump_nde),
+        "temp_ambient": float(temp_ambient),
+        "product_type": "Gasoline",  # Will be overwritten by spec_data
+        "lubricant_type": "grease"
     }
-
-
-def render_fft_input(section_name, key_prefix):
-    """Render form input FFT spectrum untuk H/V/A (optional)"""
-    st.subheader(f"📈 FFT Spectrum Analysis - {section_name}")
-    st.caption("Input peak frequency dominan dari ADASH FFT display (1-200 Hz)")
-    
-    directions = ["H", "V", "A"]
-    fft_data = {}
-    
-    for direction in directions:
-        with st.expander(f"Direction {direction} ({FAULT_MAPPING[direction]})"):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                peak_freq = st.number_input(
-                    f"Peak Frequency (Hz)",
-                    min_value=0.0,
-                    max_value=200.0,
-                    value=0.0,
-                    step=0.1,
-                    key=f"{key_prefix}_fft_freq_{direction}",
-                    help="Frekuensi peak dominan dari FFT spectrum (ISO 13373-3 §6.2.2: fault identification)"
-                )
-            
-            with col2:
-                peak_amp = st.number_input(
-                    f"Amplitude (mm/s RMS)",
-                    min_value=0.0,
-                    max_value=50.0,
-                    value=0.0,
-                    step=0.1,
-                    key=f"{key_prefix}_fft_amp_{direction}",
-                    help="Amplitudo peak dominan (ISO 13373-3 §6.2.2: confidence assessment)"
-                )
-            
-            fft_data[f"FFT_Freq_{direction}"] = peak_freq
-            fft_data[f"FFT_Amp_{direction}"] = peak_amp
-    
-    return fft_data
 
 
 def collect_all_inputs():
@@ -312,10 +539,10 @@ def collect_all_inputs():
     spec_data = render_specification_form()
     st.markdown("---")
     
-    vibration_driver = render_vibration_input("Driver (Motor)", "driver")
+    vibration_motor = render_vibration_input_motor()
     st.markdown("---")
     
-    vibration_driven = render_vibration_input("Driven (Pump)", "driven")
+    vibration_pump = render_vibration_input_pump()
     st.markdown("---")
     
     operational_data = render_operational_input()
@@ -328,12 +555,13 @@ def collect_all_inputs():
     st.markdown("---")
     
     thermal_data = render_thermal_input()
+    thermal_data["product_type"] = spec_data["product_type"]  # Overwrite with actual product
     st.markdown("---")
     
-    # Section FFT Spectrum (optional)
-    fft_driver = render_fft_input("Driver (Motor)", "driver_fft")
+    fft_motor = render_fft_input_motor()
     st.markdown("---")
-    fft_driven = render_fft_input("Driven (Pump)", "driven_fft")
+    
+    fft_pump = render_fft_input_pump()
     
     st.markdown("---")
     col_submit, col_clear = st.columns(2)
@@ -344,6 +572,22 @@ def collect_all_inputs():
     with col_clear:
         clear_button = st.button("🗑️ Clear Form", use_container_width=True)
     
+    # Prepare HF band data structure
+    hf_data = {
+        "motor_de": vibration_motor.get("HF_DE", 0.0),
+        "motor_nde": vibration_motor.get("HF_NDE", 0.0),
+        "pump_de": vibration_pump.get("HF_DE", 0.0),
+        "pump_nde": vibration_pump.get("HF_NDE", 0.0)
+    }
+    
+    # Prepare demodulation data structure
+    demod_data = {
+        "motor_de": vibration_motor.get("Demodulation_DE", 0.0),
+        "motor_nde": vibration_motor.get("Demodulation_NDE", 0.0),
+        "pump_de": vibration_pump.get("Demodulation_DE", 0.0),
+        "pump_nde": vibration_pump.get("Demodulation_NDE", 0.0)
+    }
+    
     return {
         "metadata": {
             "pump_tag": pump_tag,
@@ -353,17 +597,17 @@ def collect_all_inputs():
         },
         "specification": spec_data,
         "vibration": {
-            "driver": vibration_driver,
-            "driven": vibration_driven
+            "motor": vibration_motor,
+            "pump": vibration_pump
         },
         "operational": operational_data,
         "rpm": rpm_actual,
         "electrical": electrical_data,
         "thermal": thermal_data,
-        "fft": {
-            "driver": fft_driver,
-            "driven": fft_driven
-        },
+        "hf_band": hf_data,
+        "demodulation": demod_data,
+        "fft_motor": fft_motor,
+        "fft_pump": fft_pump,
         "submit_clicked": submit_button,
         "clear_clicked": clear_button
     }
